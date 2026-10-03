@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="540" viewBox="0 0 440 540" role="img" aria-label="Dentist Portrait — placeholder image">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E6FFFB" />
+      <stop offset="100%" stop-color="#FFFFFF" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.35" r="0.75">
+      <stop offset="0%" stop-color="#14B8A6" stop-opacity="0.16" />
+      <stop offset="100%" stop-color="#14B8A6" stop-opacity="0" />
+    </radialGradient>
+    <pattern id="grid" width="33" height="33" patternUnits="userSpaceOnUse">
+      <path d="M33 0H0V33" fill="none" stroke="#0F766E" stroke-opacity="0.07" />
+    </pattern>
+  </defs>
+
+  <rect width="440" height="540" fill="url(#bg)" />
+  <rect width="440" height="540" fill="url(#grid)" />
+  <circle cx="378" cy="86" r="132" fill="url(#glow)" />
+  <circle cx="53" cy="464" r="114" fill="#E6FFFB" opacity="0.85" />
+  <rect x="1" y="1" width="438" height="538" rx="17" fill="none" stroke="#E8E6E1" />
+
+  <g transform="translate(167, 174) scale(1.06)" fill="none" stroke="#0F766E" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+
+    <circle cx="50" cy="38" r="19" />
+    <path d="M17 94c0-19 15-32 33-32s33 13 33 32" />
+  </g>
+
+  <text x="220" y="336" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="24" font-weight="600" fill="#17202A">Dentist Portrait</text>
+  <text x="220" y="366" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" letter-spacing="2" fill="#667085">REPLACE WITH PHOTO</text>
+</svg>
