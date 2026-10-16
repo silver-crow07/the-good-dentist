@@ -8,6 +8,7 @@ import { PageHero } from "@/components/shared/PageHero";
 import { Reveal } from "@/components/shared/Reveal";
 import { SectionHeading } from "@/components/shared/SectionHeading";
 import { getFeaturedDoctor } from "@/data/doctors";
+import { CLINIC_IMAGES } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "About",
@@ -75,10 +76,10 @@ export default function AboutPage() {
 
           <Reveal delay={120}>
             <Image
-              src="/images/about-clinic.svg"
-              alt="Illustration of the patient-care environment at The Good Dentist"
-              width={1000}
-              height={800}
+              src={CLINIC_IMAGES.aboutClinic}
+              alt="Stock photo of a healthcare team, used as a temporary stand-in for the patient-care environment at The Good Dentist"
+              width={960}
+              height={640}
               sizes="(min-width: 1024px) 48vw, 100vw"
               loading="lazy"
               className="h-auto w-full rounded-[1.75rem] border border-line shadow-soft"

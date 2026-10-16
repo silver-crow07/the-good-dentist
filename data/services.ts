@@ -26,6 +26,9 @@ export type Service = {
 /**
  * Editable service catalogue. Replace copy/details with the clinic's verified
  * offerings — UI components never hardcode service content.
+ *
+ * Service images are temporary stock photos (CC0 / free license) — see
+ * `public/images/IMAGE_SOURCES.md`. Swap for clinic photography before launch.
  */
 export const services: Service[] = [
   {
@@ -43,7 +46,7 @@ export const services: Service[] = [
       "Fillings and preventive care",
       "Personalised oral hygiene guidance",
     ],
-    image: "/images/treatment-room.svg",
+    image: "/images/services/general-dentistry.jpg",
     featured: true,
   },
   {
@@ -61,7 +64,7 @@ export const services: Service[] = [
       "Surface stain removal",
       "Home-care recommendations",
     ],
-    image: "/images/dental-equipment.svg",
+    image: "/images/services/dental-cleaning.jpg",
     featured: true,
   },
   {
@@ -79,7 +82,7 @@ export const services: Service[] = [
       "Tooth-preserving treatment",
       "Post-treatment follow-up guidance",
     ],
-    image: "/images/treatment-room.svg",
+    image: "/images/services/root-canal-treatment.jpg",
     featured: true,
   },
   {
@@ -97,7 +100,7 @@ export const services: Service[] = [
       "Restoration planning",
       "Ongoing maintenance advice",
     ],
-    image: "/images/dental-equipment.svg",
+    image: "/images/services/dental-implants.jpg",
     featured: true,
   },
   {
@@ -115,7 +118,7 @@ export const services: Service[] = [
       "Shade assessment",
       "Aftercare guidance",
     ],
-    image: "/images/patient-care.svg",
+    image: "/images/services/teeth-whitening.jpg",
     featured: true,
   },
   {
@@ -133,7 +136,7 @@ export const services: Service[] = [
       "Natural-looking finishing",
       "Clear, staged options",
     ],
-    image: "/images/reception.svg",
+    image: "/images/services/cosmetic-dentistry.jpg",
     featured: true,
   },
   {
@@ -151,7 +154,7 @@ export const services: Service[] = [
       "Retention guidance",
       "Family-friendly scheduling",
     ],
-    image: "/images/patient-care.svg",
+    image: "/images/services/braces-and-aligners.jpg",
     featured: true,
   },
   {
@@ -169,7 +172,7 @@ export const services: Service[] = [
       "Parent-friendly explanations",
       "Habit and hygiene guidance",
     ],
-    image: "/images/patient-care.svg",
+    image: "/images/services/childrens-dentistry.jpg",
     featured: false,
   },
 ];

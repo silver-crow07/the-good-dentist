@@ -21,9 +21,9 @@ export function DoctorCard({ doctor, className }: DoctorCardProps) {
       <div className="relative mx-auto w-full max-w-56 overflow-hidden rounded-2xl bg-mint sm:mx-0 sm:max-w-none">
         <Image
           src={doctor.image}
-          alt={`Portrait placeholder for ${doctor.name}`}
-          width={440}
-          height={540}
+          alt={`Stock portrait placeholder for ${doctor.name}`}
+          width={800}
+          height={1200}
           sizes="(max-width: 640px) 80vw, 180px"
           className="h-full w-full object-cover"
         />

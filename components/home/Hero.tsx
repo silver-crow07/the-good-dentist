@@ -5,6 +5,7 @@ import { WhatsAppButton } from "@/components/shared/WhatsAppButton";
 import { ButtonLink } from "@/components/ui/button";
 import {
   BOOK_APPOINTMENT_HREF,
+  CLINIC_IMAGES,
   CLINIC_OPENING_HOURS,
   CLINIC_PHONE_DIAL,
   CLINIC_PHONE_NUMBER,
@@ -82,10 +83,10 @@ export function Hero() {
           />
 
           <Image
-            src="/images/hero-clinic.svg"
-            alt="Illustration of a calm, modern dental treatment room at The Good Dentist"
-            width={960}
-            height={1040}
+            src={CLINIC_IMAGES.hero}
+            alt="Stock photo of a modern dental treatment room, used as a temporary stand-in for The Good Dentist"
+            width={1280}
+            height={1917}
             priority
             sizes="(min-width: 1024px) 46vw, (min-width: 640px) 80vw, 100vw"
             className="relative z-10 h-auto w-full rounded-[1.75rem] border border-line shadow-lift"

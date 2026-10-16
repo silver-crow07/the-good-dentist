@@ -4,7 +4,7 @@ import Link from "next/link";
 
 import { Reveal } from "@/components/shared/Reveal";
 import { SectionHeading } from "@/components/shared/SectionHeading";
-import { BOOK_APPOINTMENT_HREF } from "@/lib/constants";
+import { BOOK_APPOINTMENT_HREF, CLINIC_IMAGES } from "@/lib/constants";
 
 const features = [
   {
@@ -49,10 +49,10 @@ export function WhyChooseUs() {
       <div className="container-page grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
         <Reveal className="relative">
           <Image
-            src="/images/why-choose-us.svg"
-            alt="Illustration of the clinic interior at The Good Dentist"
-            width={1000}
-            height={800}
+            src={CLINIC_IMAGES.whyChooseUs}
+            alt="Stock photo of a calm, minimal interior used as a temporary stand-in for The Good Dentist clinic environment"
+            width={960}
+            height={640}
             sizes="(min-width: 1024px) 48vw, 100vw"
             loading="lazy"
             className="h-auto w-full rounded-[1.75rem] border border-primary/10 shadow-soft"

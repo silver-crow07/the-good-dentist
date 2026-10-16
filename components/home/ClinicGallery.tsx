@@ -17,7 +17,7 @@ export function ClinicGallery() {
             id="gallery-heading"
             eyebrow="Inside The Clinic"
             title="A space designed to feel calm."
-            description="Reception, treatment rooms and the team — placeholders are shown until real clinic photography is available."
+            description="Reception, treatment rooms and the team — temporary stock photos are shown until real clinic photography is available."
             align="center"
           />
         </Reveal>
@@ -47,7 +47,7 @@ export function ClinicGallery() {
                     </span>
                   </span>
                   <span className="shrink-0 text-[0.65rem] uppercase tracking-[0.14em] text-muted">
-                    Placeholder
+                    Stock photo
                   </span>
                 </figcaption>
               </figure>

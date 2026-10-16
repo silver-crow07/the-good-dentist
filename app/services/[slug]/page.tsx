@@ -100,9 +100,9 @@ export default async function ServiceDetailPage(
             <Reveal className="mt-8" delay={80}>
               <Image
                 src={service.image}
-                alt={`Illustration representing ${service.title} at The Good Dentist`}
+                alt={`Stock photo illustrating ${service.title} at The Good Dentist (temporary stand-in)`}
                 width={1000}
-                height={640}
+                height={667}
                 sizes="(min-width: 1024px) 60vw, 100vw"
                 loading="lazy"
                 className="h-auto w-full rounded-[1.5rem] border border-line shadow-soft"

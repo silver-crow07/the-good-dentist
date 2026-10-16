@@ -32,6 +32,18 @@ export const CLINIC_OPENING_HOURS = "[Clinic Hours]";
 /** Placeholder address used for map/directions links. */
 export const CLINIC_MAP_QUERY = CLINIC_ADDRESS;
 
+/**
+ * Temporary stock photography (CC0 / free-license). Replace with real clinic
+ * photography before launch. Sources & licenses are listed in
+ * `public/images/IMAGE_SOURCES.md`.
+ */
+export const CLINIC_IMAGES = {
+  hero: "/images/hero/hero-treatment-room.jpg",
+  whyChooseUs: "/images/about/about-interior.jpg",
+  aboutClinic: "/images/about/about-care.jpg",
+  mapPlaceholder: "/images/map-placeholder.svg",
+} as const;
+
 export const NAV_LINKS = [
   { href: "/", label: "Home" },
   { href: "/about", label: "About" },
