@@ -23,7 +23,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: `${SITE_NAME} — Premium Dental Clinic`,
+    default: `${SITE_NAME} — Rooted in Care`,
     template: `%s | ${SITE_NAME}`,
   },
   description: SITE_DESCRIPTION,
@@ -42,20 +42,20 @@ export const metadata: Metadata = {
     type: "website",
     locale: "en_US",
     siteName: SITE_NAME,
-    title: `${SITE_NAME} — Premium Dental Clinic`,
+    title: `${SITE_NAME} — Rooted in Care`,
     description: SITE_DESCRIPTION,
     url: SITE_URL,
   },
   twitter: {
     card: "summary",
-    title: `${SITE_NAME} — Premium Dental Clinic`,
+    title: `${SITE_NAME} — Rooted in Care`,
     description: SITE_DESCRIPTION,
   },
   robots: { index: true, follow: true },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0F766E",
+  themeColor: "#819B36",
   width: "device-width",
   initialScale: 1,
 };

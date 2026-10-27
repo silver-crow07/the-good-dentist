@@ -18,10 +18,10 @@ export function Hero() {
 
       <div className="container-page relative grid items-center gap-12 pb-16 pt-12 lg:grid-cols-12 lg:gap-12 lg:pb-24 lg:pt-20">
         <div className="lg:col-span-6">
-          <p className="inline-flex items-center gap-2.5 rounded-full border border-primary/15 bg-mint px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+          <p className="inline-flex items-center gap-2.5 rounded-full border border-primary-soft/50 bg-mint px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-primary">
             <span
               aria-hidden="true"
-              className="size-1.5 rounded-full bg-primary-soft"
+              className="size-1.5 rounded-full bg-olive"
             />
             Modern Dental Clinic
           </p>
@@ -30,15 +30,15 @@ export function Hero() {
             id="hero-heading"
             className="mt-7 text-[2.6rem] font-semibold leading-[1.04] tracking-tight text-ink sm:text-[3.4rem] xl:text-[3.9rem]"
           >
-            Your Smile Deserves
+            Rooted in Care.
             <span className="mt-1 block text-primary">
-              Thoughtful Dental Care.
+              Focused on Your Smile.
             </span>
           </h1>
 
           <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted">
-            Modern, compassionate dental care designed around your comfort,
-            confidence, and long-term oral health.
+            Thoughtful dental care in a welcoming environment, with your comfort
+            and long-term oral health at the heart of every visit.
           </p>
 
           <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">

@@ -9,7 +9,6 @@ import {
   CLINIC_OPENING_HOURS,
   CLINIC_PHONE_DIAL,
   CLINIC_PHONE_NUMBER,
-  CLINIC_TAGLINE,
   FOOTER_QUICK_LINKS,
 } from "@/lib/constants";
 import { buildBookingMessage, buildWhatsAppUrl } from "@/lib/whatsapp";
@@ -62,8 +61,9 @@ export function Footer() {
       <div className="container-page grid gap-10 py-12 sm:grid-cols-2 lg:grid-cols-12 lg:gap-8 lg:py-16">
         <div className="lg:col-span-4">
           <Logo />
-          <p className="mt-4 max-w-xs text-sm leading-relaxed text-muted">
-            {CLINIC_TAGLINE}
+          <p className="mt-5 max-w-xs text-sm leading-relaxed text-muted">
+            Thoughtful dental care in a welcoming environment — focused on your
+            long-term oral health.
           </p>
           <p className="mt-6 text-xs font-semibold uppercase tracking-[0.16em] text-primary">
             {CLINIC_NAME}

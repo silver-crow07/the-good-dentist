@@ -13,11 +13,11 @@ export const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ?? "https://thegooddentist.example.com";
 
 export const SITE_DESCRIPTION =
-  "Modern, compassionate dental care designed around your comfort, confidence, and long-term oral health.";
+  "Thoughtful dental care in a welcoming environment — rooted in care, focused on your long-term oral health.";
 
 export const CLINIC_NAME = "The Good Dentist";
-export const CLINIC_WORDMARK = "THE GOOD DENTIST";
-export const CLINIC_TAGLINE = "Modern dental care with a patient-first approach.";
+export const CLINIC_WORDMARK = "the Good Dentist";
+export const CLINIC_TAGLINE = "Rooted in care.";
 
 /** Digits only, international format without `+` — used to build wa.me links. */
 export const CLINIC_WHATSAPP_NUMBER = "10000000000";

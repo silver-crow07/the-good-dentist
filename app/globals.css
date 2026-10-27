@@ -1,27 +1,58 @@
 @import "tailwindcss";
 
 @theme {
-  /* Brand palette */
-  --color-primary: #0f766e;
-  --color-primary-deep: #0b5d57;
-  --color-primary-soft: #14b8a6;
-  --color-mint: #f0fdfa;
-  --color-surface: #fafaf8;
+  /* ------------------------------------------------------------------
+   * Brand palette — derived from the official The Good Dentist logo.
+   * Olive + sage green, warm whites, near-black text.
+   * Centralised here so a brand tweak stays a one-file change.
+   *
+   * Note on the primary: the logo's own olive (#819B36) only reaches
+   * 3.15:1 on white, which fails WCAG AA for normal text and for white
+   * text on solid buttons. The brief asks for a darker variation where a
+   * pair fails, so `--color-primary` is a deepened olive that clears
+   * 4.5:1 against white, surface AND pale sage. The exact logo olive is
+   * kept as `--color-olive` for large text and decorative use only.
+   * ------------------------------------------------------------------ */
+
+  /* Primary Olive — buttons, links, active nav, small text, focus rings */
+  --color-primary: #5f7327;
+  /* Deep Olive — hover/active states, dark accents, solid section fills */
+  --color-primary-deep: #48571d;
+  /* Sage Green — soft borders, decorative accents, subtle highlights */
+  --color-primary-soft: #a9ba78;
+  /* Pale Sage — highlighted sections, soft card backgrounds */
+  --color-mint: #f1f4e8;
+  /* Exact logo olive — LARGE text and decorative accents only (3.15:1) */
+  --color-olive: #819b36;
+
+  /* Warm White — cards, nav, clean content surfaces */
   --color-card: #ffffff;
-  --color-ink: #17202a;
-  --color-muted: #667085;
-  --color-accent: #c9a227;
-  --color-accent-deep: #7a5f0f;
-  --color-line: #e8e6e1;
-  --color-line-soft: #f0efec;
+  /* Soft Off-White — page background, alternating sections */
+  --color-surface: #fafaf6;
+
+  /* Primary Text — headings, body, navigation */
+  --color-ink: #171914;
+  /* Secondary Text — supporting copy, descriptions, metadata */
+  --color-muted: #62665b;
+
+  /* Muted Border — card borders, dividers, input outlines */
+  --color-line: #e3e7d8;
+  --color-line-soft: #eef1e5;
+
+  /* Accent — quiet highlight for informational callouts */
+  --color-accent: #a9ba78;
+  --color-accent-deep: #4f6120;
+
+  /* WhatsApp green — third-party brand colour, intentionally distinct */
+  --color-whatsapp: #25d366;
 
   /* Typography */
   --font-display: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 
-  /* Elevation */
-  --shadow-soft: 0 1px 2px rgb(23 32 42 / 0.04), 0 18px 40px -24px rgb(15 118 110 / 0.35);
-  --shadow-lift: 0 2px 4px rgb(23 32 42 / 0.05), 0 28px 56px -28px rgb(15 118 110 / 0.4);
+  /* Elevation — restrained, olive-tinted shadows */
+  --shadow-soft: 0 1px 2px rgb(23 25 20 / 0.04), 0 18px 40px -24px rgb(72 87 29 / 0.28);
+  --shadow-lift: 0 2px 4px rgb(23 25 20 / 0.05), 0 28px 56px -28px rgb(72 87 29 / 0.32);
 
   /* Motion */
   --animate-ping-soft: ping-soft 2.6s cubic-bezier(0, 0, 0.2, 1) infinite;
@@ -75,12 +106,13 @@
   }
 
   ::selection {
-    background-color: color-mix(in srgb, var(--color-primary) 18%, white);
+    background-color: color-mix(in srgb, var(--color-primary) 20%, white);
     color: var(--color-ink);
   }
 
+  /* Focus ring uses the deep olive so it clears AA on both white and sage */
   :focus-visible {
-    outline: 2px solid var(--color-primary);
+    outline: 2px solid var(--color-primary-deep);
     outline-offset: 2px;
     border-radius: 4px;
   }
@@ -147,10 +179,11 @@
     display: none;
   }
 
+  /* Subtle olive grid texture for the hero backdrop */
   .grid-surface {
     background-image:
-      linear-gradient(to right, rgb(15 118 110 / 0.06) 1px, transparent 1px),
-      linear-gradient(to bottom, rgb(15 118 110 / 0.06) 1px, transparent 1px);
+      linear-gradient(to right, rgb(95 115 39 / 0.08) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(95 115 39 / 0.08) 1px, transparent 1px);
     background-size: 56px 56px;
     mask-image: radial-gradient(ellipse 80% 70% at 50% 30%, black 40%, transparent 100%);
   }

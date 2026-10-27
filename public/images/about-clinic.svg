@@ -1,25 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="800" viewBox="0 0 1000 800" role="img" aria-label="Patient Care — placeholder image">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#F0FDFA" />
+      <stop offset="0%" stop-color="#F1F4E8" />
       <stop offset="100%" stop-color="#FFFFFF" />
     </linearGradient>
     <radialGradient id="glow" cx="0.5" cy="0.35" r="0.75">
-      <stop offset="0%" stop-color="#14B8A6" stop-opacity="0.16" />
-      <stop offset="100%" stop-color="#14B8A6" stop-opacity="0" />
+      <stop offset="0%" stop-color="#A9BA78" stop-opacity="0.16" />
+      <stop offset="100%" stop-color="#A9BA78" stop-opacity="0" />
     </radialGradient>
     <pattern id="grid" width="59" height="59" patternUnits="userSpaceOnUse">
-      <path d="M59 0H0V59" fill="none" stroke="#0F766E" stroke-opacity="0.07" />
+      <path d="M59 0H0V59" fill="none" stroke="#5F7327" stroke-opacity="0.07" />
     </pattern>
   </defs>
 
   <rect width="1000" height="800" fill="url(#bg)" />
   <rect width="1000" height="800" fill="url(#grid)" />
   <circle cx="860" cy="128" r="240" fill="url(#glow)" />
-  <circle cx="120" cy="688" r="208" fill="#F0FDFA" opacity="0.85" />
-  <rect x="1" y="1" width="998" height="798" rx="31" fill="none" stroke="#E8E6E1" />
+  <circle cx="120" cy="688" r="208" fill="#F1F4E8" opacity="0.85" />
+  <rect x="1" y="1" width="998" height="798" rx="31" fill="none" stroke="#E3E7D8" />
 
-  <g transform="translate(403, 227) scale(1.94)" fill="none" stroke="#0F766E" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+  <g transform="translate(403, 227) scale(1.94)" fill="none" stroke="#5F7327" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
 
     <path d="M50 76s-24-15-24-31a13 13 0 0 1 24-7 13 13 0 0 1 24 7c0 16-24 31-24 31z" />
     <path d="M16 60c4 14 14 25 34 30 20-5 30-16 34-30" />

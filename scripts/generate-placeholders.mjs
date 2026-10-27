@@ -14,10 +14,10 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = join(root, "public", "images");
 
 const FONT = "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif";
-const INK = "#17202A";
-const MUTED = "#667085";
-const PRIMARY = "#0F766E";
-const SOFT = "#14B8A6";
+const INK = "#171914";
+const MUTED = "#62665B";
+const PRIMARY = "#5F7327";
+const SOFT = "#A9BA78";
 
 /** Line-art icon paths drawn inside a 0 0 100 100 viewBox. */
 const icons = {
@@ -65,7 +65,7 @@ const icons = {
     <path d="M79 66l3 9 9 3-9 3-3 9-3-9-9-3 9-3z" />`,
 };
 
-function scene({ width, height, icon, title, subtitle, tint = "#F0FDFA" }) {
+function scene({ width, height, icon, title, subtitle, tint = "#F1F4E8" }) {
   const scale = Math.min(width, height) / 620;
   const iconSize = Math.round(150 * scale);
   const titleSize = Math.round(34 * scale);
@@ -201,7 +201,7 @@ const files = [
     icon: "portrait",
     title: "Dentist Portrait",
     subtitle: "Replace with photo",
-    tint: "#E6FFFB",
+    tint: "#E9EFDA",
   },
   {
     name: "dr-portrait-2.svg",
@@ -210,7 +210,7 @@ const files = [
     icon: "tooth",
     title: "Dentist Portrait",
     subtitle: "Replace with photo",
-    tint: "#FEF9E7",
+    tint: "#FAF7EC",
   },
 ];
 
@@ -222,9 +222,12 @@ for (const file of files) {
 }
 
 const favicon = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="16" fill="${PRIMARY}" />
-  <g transform="translate(12 12) scale(0.4)" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
-    ${icons.tooth}
+  <rect width="64" height="64" rx="15" fill="#F1F4E8" />
+  <g transform="translate(5.58 4.52) scale(0.44)">
+    <path
+      d="M60 22 C72 12 87 16 92 31 C97 47 93 60 89 74 C86 86 84 100 78 108 C73 113 69 105 68 95 C66 87 64 84 60 82 C56 84 54 87 52 95 C51 105 47 113 42 108 C36 100 34 86 31 74 C27 60 23 47 28 31 C33 16 48 12 60 22 Z"
+      fill="#657D29"
+    />
   </g>
 </svg>
 `;

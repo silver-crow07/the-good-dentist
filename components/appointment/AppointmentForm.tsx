@@ -140,7 +140,10 @@ export function AppointmentForm() {
   );
 
   const currentStep = STEPS.find((entry) => entry.id === step) ?? STEPS[0];
-  const errorCount = Object.keys(errors).length;
+  // Count only real messages: `updateField` clears an error by writing
+  // `undefined`, which would otherwise leave an empty key behind and make the
+  // "review the highlighted fields" alert appear while the user is typing.
+  const errorCount = Object.values(errors).filter(Boolean).length;
 
   function updateField<K extends keyof FormValues>(key: K, value: FormValues[K]) {
     setValues((previous) => {

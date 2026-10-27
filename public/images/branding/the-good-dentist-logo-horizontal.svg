@@ -1,0 +1,45 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="440"
+  height="120"
+  viewBox="0 0 440 120"
+  role="img"
+  aria-label="The Good Dentist — Rooted in care."
+>
+  <title>The Good Dentist</title>
+
+  <!-- Two-tone tooth mark -->
+  <g transform="translate(14 12) scale(0.78)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path
+      d="M60 22 C72 12 87 16 92 31 C97 47 93 60 89 74 C86 86 84 100 78 108 C73 113 69 105 68 95 C66 87 64 84 60 82"
+      stroke="#6F8A2C"
+      stroke-width="7"
+    />
+    <path
+      d="M60 22 C48 12 33 16 28 31 C23 47 27 60 31 74 C34 86 36 100 42 108 C47 113 51 105 52 95 C54 87 56 84 60 82"
+      stroke="#A9BA78"
+      stroke-width="7"
+    />
+  </g>
+
+  <!-- Wordmark -->
+  <g font-family="'Segoe Script','Bradley Hand','Brush Script MT',cursive" font-style="italic" fill="#1B1B1B">
+    <text x="116" y="52" font-size="27">the</text>
+  </g>
+  <g font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif" font-weight="800">
+    <text x="153" y="61" font-size="36" fill="#8FA84E">Good</text>
+    <text x="249" y="61" font-size="36" fill="#1B1B1B">Dentist</text>
+  </g>
+
+  <line x1="116" y1="74" x2="404" y2="74" stroke="#E3E7D8" stroke-width="1.5" />
+
+  <text
+    x="117"
+    y="97"
+    font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif"
+    font-size="17"
+    fill="#6BA5B0"
+  >
+    Rooted in care.
+  </text>
+</svg>
