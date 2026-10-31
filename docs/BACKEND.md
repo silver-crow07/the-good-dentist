@@ -373,6 +373,15 @@ differs from older Prisma in several ways worth knowing:
 - The `prisma-client` generator emits to a project-local
   `output = "../generated/prisma"` (git-ignored) — import from
   `@/generated/prisma/client`.
+- **`npm run build` = `prisma generate && next build`** — a fresh checkout or
+  CI never needs a pre-existing `generated/` folder (it is git-ignored by
+  design, and the relative import in `lib/server/db.ts` is intentionally left
+  untouched). `prisma generate` takes <1 s, needs **no `DATABASE_URL`** and no
+  running database, so it is safe at build time on hosts without `.env`. The
+  Prisma CLI sits in `dependencies` (not dev) so it survives pipelines that
+  omit devDependencies. There is no `postinstall` hook: generating on every
+  install would run in environments (prod-only installs) where the artifact is
+  not needed and could fail an install.
 - The client requires a **driver adapter**: `new PrismaPg({ connectionString })`
   from `@prisma/adapter-pg` (see `lib/server/db.ts`). The adapter formats
   `DateTime` params as **naive UTC strings** (no offset), so connections are
