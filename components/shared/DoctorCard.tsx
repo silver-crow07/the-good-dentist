@@ -21,7 +21,11 @@ export function DoctorCard({ doctor, className }: DoctorCardProps) {
       <div className="relative mx-auto w-full max-w-56 overflow-hidden rounded-2xl bg-mint sm:mx-0 sm:max-w-none">
         <Image
           src={doctor.image}
-          alt={`Stock portrait placeholder for ${doctor.name}`}
+          alt={
+            doctor.isPhotoPlaceholder
+              ? `Temporary stock portrait standing in for a photo of ${doctor.name} — pending`
+              : `Portrait of ${doctor.name}`
+          }
           width={800}
           height={1200}
           sizes="(max-width: 640px) 80vw, 180px"
@@ -32,8 +36,8 @@ export function DoctorCard({ doctor, className }: DoctorCardProps) {
       <div className="flex flex-col justify-center gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="muted">{doctor.role}</Badge>
-          {doctor.isPlaceholder ? (
-            <Badge variant="accent">Placeholder profile</Badge>
+          {doctor.isPhotoPlaceholder ? (
+            <Badge variant="accent">Photo pending</Badge>
           ) : null}
         </div>
 
@@ -52,7 +56,9 @@ export function DoctorCard({ doctor, className }: DoctorCardProps) {
         </div>
 
         <p className="text-sm text-muted">{doctor.experience}</p>
-        <p className="text-sm leading-relaxed text-ink/80">{doctor.bio}</p>
+        {doctor.bio ? (
+          <p className="text-sm leading-relaxed text-ink/80">{doctor.bio}</p>
+        ) : null}
 
         <div>
           <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-primary">

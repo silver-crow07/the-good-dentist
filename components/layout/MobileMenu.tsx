@@ -31,7 +31,7 @@ export function MobileMenu({ open, onClose }: MobileMenuProps) {
       id="mobile-menu"
       className={cn(
         "overflow-hidden border-t border-line bg-surface/95 backdrop-blur-lg transition-[max-height,opacity] duration-300 ease-out lg:hidden",
-        open ? "max-h-[36rem] opacity-100" : "max-h-0 opacity-0",
+        open ? "max-h-[44rem] opacity-100" : "max-h-0 opacity-0",
       )}
     >
       <nav aria-label="Mobile" className="container-page pb-6 pt-4">

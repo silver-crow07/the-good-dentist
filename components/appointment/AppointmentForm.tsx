@@ -6,10 +6,12 @@ import {
   CalendarDays,
   Clock,
   Loader2,
+  RefreshCw,
   Stethoscope,
   User,
+  WifiOff,
 } from "lucide-react";
-import { useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { BookingSuccess, type BookingSummary } from "./BookingSuccess";
 import { DateSelector } from "./DateSelector";
@@ -20,11 +22,12 @@ import { Button } from "@/components/ui/button";
 import { FieldError, FieldLabel, Input, Select } from "@/components/ui/field";
 import { services } from "@/data/services";
 import {
-  formatSlotDate,
-  getBookableDates,
-  getSlotsForDate,
-  isSlotAvailable,
-} from "@/lib/appointment";
+  ApiClientError,
+  fetchAvailability,
+  requestAppointment,
+  type AvailabilitySlot,
+} from "@/lib/client/appointments";
+import { formatSlotDate, getBookableDates } from "@/lib/appointment";
 import { cn } from "@/lib/utils";
 
 type Step = 1 | 2 | 3 | 4;
@@ -41,6 +44,15 @@ type FormValues = {
 type FieldErrors = Partial<Record<keyof FormValues, string>>;
 
 type Status = "idle" | "submitting";
+
+/** Server-backed availability for the chosen date + treatment. */
+type SlotsState = {
+  status: "idle" | "loading" | "ready" | "error";
+  slots: AvailabilitySlot[];
+  /** True when the clinic is closed on the selected date. */
+  closed: boolean;
+  message?: string;
+};
 
 const STEPS: { id: Step; label: string; heading: string; hint: string }[] = [
   {
@@ -104,40 +116,73 @@ function validateStep(step: Step, values: FormValues): FieldErrors {
     errors.date = "Please select a date.";
   }
 
-  if (step === 4) {
-    if (!values.time) {
-      errors.time = "Please select a time slot.";
-    } else {
-      const treatment = services.find((s) => s.slug === values.treatmentSlug);
-      const slots = treatment
-        ? getSlotsForDate(values.date, treatment.durationMinutes)
-        : [];
-      if (!isSlotAvailable(slots, values.time)) {
-        errors.time = "That slot is no longer available — please choose another.";
-      }
-    }
+  // Step 4: the server is the authority on availability — it re-validates
+  // the slot on submit and answers 409 if someone else took it meanwhile.
+  if (step === 4 && !values.time) {
+    errors.time = "Please select a time slot.";
   }
 
   return errors;
 }
+
+const INITIAL_SLOTS: SlotsState = { status: "idle", slots: [], closed: false };
 
 export function AppointmentForm() {
   const [step, setStep] = useState<Step>(1);
   const [values, setValues] = useState<FormValues>(EMPTY_VALUES);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [status, setStatus] = useState<Status>("idle");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [slotsState, setSlotsState] = useState<SlotsState>(INITIAL_SLOTS);
   const [summary, setSummary] = useState<BookingSummary | null>(null);
+
+  const slotsAbortRef = useRef<AbortController | null>(null);
 
   const dates = useMemo(() => getBookableDates(14), []);
   const treatment = services.find((entry) => entry.slug === values.treatmentSlug);
-  const durationMinutes = treatment?.durationMinutes;
-  const slots = useMemo(
-    () =>
-      values.date && durationMinutes
-        ? getSlotsForDate(values.date, durationMinutes)
-        : [],
-    [values.date, durationMinutes],
-  );
+
+  /** label ("9:00 AM") → ISO start instant for the booking request. */
+  const slotStartByLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const slot of slotsState.slots) map.set(slot.label, slot.start);
+    return map;
+  }, [slotsState.slots]);
+
+  const loadSlots = useCallback((date: string, serviceSlug: string) => {
+    slotsAbortRef.current?.abort();
+    const controller = new AbortController();
+    slotsAbortRef.current = controller;
+    setSlotsState({ status: "loading", slots: [], closed: false });
+
+    fetchAvailability(date, serviceSlug, controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        setSlotsState({ status: "ready", slots: result.slots, closed: result.closed });
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        const message =
+          error instanceof ApiClientError
+            ? error.message
+            : "We could not load available times. Please try again.";
+        setSlotsState({ status: "error", slots: [], closed: false, message });
+      });
+  }, []);
+
+  // Load real availability whenever date + treatment are both chosen.
+  // The synchronous state flips below are only the "loading"/"reset" flags —
+  // actual availability arrives asynchronously from the API.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (values.date && values.treatmentSlug) {
+      loadSlots(values.date, values.treatmentSlug);
+    } else {
+      slotsAbortRef.current?.abort();
+      setSlotsState(INITIAL_SLOTS);
+    }
+    return () => slotsAbortRef.current?.abort();
+  }, [values.date, values.treatmentSlug, loadSlots]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const currentStep = STEPS.find((entry) => entry.id === step) ?? STEPS[0];
   // Count only real messages: `updateField` clears an error by writing
@@ -154,10 +199,14 @@ export function AppointmentForm() {
       return next;
     });
     setErrors((previous) => ({ ...previous, [key]: undefined }));
+    setSubmitError(null);
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // Guard against accidental double-submits (Enter key + click races).
+    if (status === "submitting") return;
+
     const stepErrors = validateStep(step, values);
     setErrors(stepErrors);
     if (Object.keys(stepErrors).length > 0) return;
@@ -167,21 +216,67 @@ export function AppointmentForm() {
       return;
     }
 
+    const startsAt = slotStartByLabel.get(values.time);
+    if (!startsAt) {
+      // Slots were refreshed and the previous choice no longer exists.
+      setErrors({ time: "That slot is no longer available — please choose another." });
+      if (values.date && values.treatmentSlug) loadSlots(values.date, values.treatmentSlug);
+      return;
+    }
+
     setStatus("submitting");
-    // Phase 1: mock submission. Replace with an API call in a later phase.
-    window.setTimeout(() => {
-      setStatus("idle");
+    setSubmitError(null);
+    try {
+      const result = await requestAppointment({
+        patient: {
+          fullName: values.name.trim(),
+          phone: values.phone.trim(),
+          email: values.email.trim() || undefined,
+        },
+        serviceSlug: values.treatmentSlug,
+        startsAt,
+      });
+      // Success screen only AFTER the server accepted the request.
       setSummary({
         name: values.name.trim(),
         date: values.date ? formatSlotDate(values.date) : "",
         time: values.time,
         treatment: treatment?.title ?? "",
+        status: result.appointment.status,
+        reference: result.appointment.publicId,
       });
-    }, 700);
+    } catch (error) {
+      if (error instanceof ApiClientError) {
+        if (error.status === 409) {
+          // Slot raced away — explain and refresh the list.
+          setSubmitError(error.message);
+          setValues((previous) => ({ ...previous, time: "" }));
+          if (values.date && values.treatmentSlug) loadSlots(values.date, values.treatmentSlug);
+        } else if (error.fields && Object.keys(error.fields).length > 0) {
+          const next: FieldErrors = {};
+          if (error.fields["patient.fullName"]) next.name = error.fields["patient.fullName"];
+          if (error.fields["patient.phone"]) next.phone = error.fields["patient.phone"];
+          if (error.fields["patient.email"]) next.email = error.fields["patient.email"];
+          if (error.fields["serviceSlug"]) next.treatmentSlug = error.fields["serviceSlug"];
+          if (error.fields["startsAt"]) next.time = error.fields["startsAt"];
+          setErrors(next);
+          setSubmitError(error.message);
+        } else {
+          setSubmitError(error.message);
+        }
+      } else {
+        setSubmitError(
+          "Something went wrong while sending your request. Please try again.",
+        );
+      }
+    } finally {
+      setStatus("idle");
+    }
   }
 
   function goBack() {
     setErrors({});
+    setSubmitError(null);
     setStep((current) => (current > 1 ? ((current - 1) as Step) : current));
   }
 
@@ -189,6 +284,8 @@ export function AppointmentForm() {
     setSummary(null);
     setValues(EMPTY_VALUES);
     setErrors({});
+    setSubmitError(null);
+    setSlotsState(INITIAL_SLOTS);
     setStep(1);
   }
 
@@ -199,6 +296,12 @@ export function AppointmentForm() {
       </div>
     );
   }
+
+  const selectorSlots = slotsState.slots.map((slot) => ({
+    time: slot.label,
+    available: slot.available,
+  }));
+  const availableCount = selectorSlots.filter((slot) => slot.available).length;
 
   return (
     <form
@@ -225,6 +328,7 @@ export function AppointmentForm() {
                   disabled={!canJump}
                   onClick={() => {
                     setErrors({});
+                    setSubmitError(null);
                     setStep(entry.id);
                   }}
                   aria-current={active ? "step" : undefined}
@@ -309,7 +413,7 @@ export function AppointmentForm() {
                     type="tel"
                     inputMode="tel"
                     autoComplete="tel"
-                    placeholder="+1 000 000 0000"
+                    placeholder="e.g. 98765 43210"
                     value={values.phone}
                     onChange={(event) => updateField("phone", event.target.value)}
                     aria-invalid={Boolean(errors.phone)}
@@ -378,13 +482,13 @@ export function AppointmentForm() {
                       </p>
                       <p className="mt-3 flex items-center gap-2 text-xs text-primary">
                         <Stethoscope aria-hidden="true" className="size-3.5" />
-                        Indicative duration {treatment.durationMinutes} minutes —
+                        Provisional duration {treatment.durationMinutes} minutes —
                         exact timing is confirmed at the clinic.
                       </p>
                     </>
                   ) : (
                     <p className="text-sm text-muted" id="treatment-hint">
-                      Select a treatment to see its indicative duration and to load
+                      Select a treatment to see its provisional duration and to load
                       the correct availability.
                     </p>
                   )}
@@ -411,21 +515,74 @@ export function AppointmentForm() {
 
             {step === 4 ? (
               <div className="grid gap-3">
-                {slots.length > 0 ? (
-                  <TimeSlotSelector
-                    slots={slots}
-                    value={values.time}
-                    onChange={(time) => updateField("time", time)}
-                  />
-                ) : (
-                  <p className="text-sm text-muted">
-                    Select a date and treatment to see available times.
+                {slotsState.status === "loading" ? (
+                  <div
+                    role="status"
+                    className="flex items-center gap-3 rounded-2xl border border-line bg-mint/40 px-4 py-6 text-sm text-muted"
+                  >
+                    <Loader2 aria-hidden="true" className="size-4 animate-spin text-primary" />
+                    Loading available times…
+                  </div>
+                ) : null}
+
+                {slotsState.status === "error" ? (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+                    <p className="flex items-start gap-2 text-sm font-medium text-red-700">
+                      <WifiOff aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                      {slotsState.message}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      onClick={() => {
+                        if (values.date && values.treatmentSlug) {
+                          loadSlots(values.date, values.treatmentSlug);
+                        }
+                      }}
+                    >
+                      <RefreshCw aria-hidden="true" className="size-4" />
+                      Try again
+                    </Button>
+                  </div>
+                ) : null}
+
+                {slotsState.status === "ready" && slotsState.closed ? (
+                  <p className="rounded-2xl border border-line bg-mint/50 p-4 text-sm text-muted">
+                    The clinic is closed on this date — please pick another day in
+                    the previous step.
                   </p>
-                )}
+                ) : null}
+
+                {slotsState.status === "ready" && !slotsState.closed ? (
+                  availableCount > 0 ? (
+                    <TimeSlotSelector
+                      slots={selectorSlots}
+                      value={values.time}
+                      onChange={(time) => updateField("time", time)}
+                    />
+                  ) : (
+                    <p className="rounded-2xl border border-line bg-mint/50 p-4 text-sm text-muted">
+                      No times are left on this date. Please choose another day, or
+                      send us a WhatsApp message and we will help.
+                    </p>
+                  )
+                ) : null}
+
                 <FieldError id="time-error">{errors.time}</FieldError>
               </div>
             ) : null}
           </div>
+
+          {submitError ? (
+            <p
+              role="alert"
+              className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+            >
+              {submitError}
+            </p>
+          ) : null}
 
           {errorCount > 0 ? (
             <p

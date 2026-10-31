@@ -1,0 +1,230 @@
+// Prisma schema — The Good Dentist appointment backend.
+//
+// Design notes (Phase 2):
+//  - Times are stored as `timestamptz` (UTC instants). All schedule rules are
+//    evaluated in the clinic timezone configured in `ClinicConfig.timezone`
+//    (Asia/Kolkata) by `lib/server/schedule.ts`.
+//  - Clinic schedule, slot interval and booking policy are DATA (ClinicConfig
+//    / ClinicHour), seeded from the client-confirmed values in
+//    `prisma/seed.ts` — never hardcoded across backend files.
+//  - Appointment durations on Service are PROVISIONAL (not yet approved by
+//    the clinic) — `durationIsProvisional` keeps that visible in the data.
+//  - Double booking is prevented in depth:
+//      1. per-doctor `pg_advisory_xact_lock` + overlap re-check inside the
+//         booking transaction (lib/server/appointments.ts),
+//      2. a PostgreSQL exclusion constraint (`tstzrange` overlap per doctor,
+//         active statuses only) added as raw SQL in the initial migration —
+//         Prisma PSL cannot express exclusion constraints, so it lives in the
+//         migration file. It protects against races across app instances.
+//  - Patient PII is kept minimal; there is no unique constraint on phone
+//    (two different people may share one number) and no public search path.
+//  - Future phases extend this schema (dental records, X-ray attachments,
+//    inventory, reminders, richer permissions) — see docs/BACKEND.md.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/* ------------------------------------------------------------------ *
+ * Clinic configuration (single row)
+ * ------------------------------------------------------------------ */
+
+model ClinicConfig {
+  id                  String        @id @default("singleton")
+  clinicName          String
+  timezone            String        @default("Asia/Kolkata")
+  address             String
+  phone               String
+  whatsappNumber      String
+  email               String
+  /// PROVISIONAL — 30-minute slot interval not yet approved by the clinic.
+  slotIntervalMinutes Int           @default(30)
+  bookingPolicy       BookingPolicy @default(MANUAL_APPROVAL)
+  hours               ClinicHour[]
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+}
+
+enum BookingPolicy {
+  /// Staff must confirm every booking request (current default — the client
+  /// has not approved automatic confirmation).
+  MANUAL_APPROVAL
+  /// Reserved for when/if the clinic approves automatic confirmation.
+  AUTO_CONFIRM
+}
+
+model ClinicHour {
+  id                String       @id @default(cuid())
+  config            ClinicConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  configId          String
+  /// 0 = Sunday … 6 = Saturday (clinic-local).
+  weekday           Int
+  closed            Boolean      @default(false)
+  /// Minutes from midnight (540 = 9:00 AM, 1260 = 9:00 PM).
+  opensAtMinutes    Int          @default(540)
+  closesAtMinutes   Int          @default(1260)
+  breakStartMinutes Int?
+  breakEndMinutes   Int?
+
+  @@unique([configId, weekday])
+}
+
+/* ------------------------------------------------------------------ *
+ * Patients (minimal PII)
+ * ------------------------------------------------------------------ */
+
+model Patient {
+  id           String        @id @default(cuid())
+  fullName     String
+  /// E.164-ish digits; NOT unique — identity never matches on phone alone.
+  phone        String
+  email        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  appointments Appointment[]
+
+  @@index([phone])
+}
+
+/* ------------------------------------------------------------------ *
+ * Doctors
+ * ------------------------------------------------------------------ */
+
+model Doctor {
+  id              String        @id @default(cuid())
+  /// Public-safe identifier (slug), never the database id.
+  slug            String        @unique
+  name            String
+  qualifications  String[]
+  experienceYears Int?
+  areasOfPractice String[]
+  bio             String?
+  active          Boolean       @default(true)
+  sortOrder       Int           @default(0)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  appointments    Appointment[]
+}
+
+/* ------------------------------------------------------------------ *
+ * Services
+ * ------------------------------------------------------------------ */
+
+model Service {
+  id    String @id @default(cuid())
+  slug  String @unique
+  name  String
+  description String?
+  /// PROVISIONAL — indicative booking length, not client-approved.
+  durationMinutes Int
+  /// True while `durationMinutes` still needs clinic approval.
+  durationIsProvisional Boolean @default(true)
+  active    Boolean @default(true)
+  sortOrder Int     @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  appointments Appointment[]
+}
+
+/* ------------------------------------------------------------------ *
+ * Appointments
+ * ------------------------------------------------------------------ */
+
+model Appointment {
+  id       String            @id @default(cuid())
+  /// Public-safe identifier handed to patients (random, non-sequential).
+  publicId String            @unique
+  patient  Patient           @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  patientId String
+  doctor   Doctor            @relation(fields: [doctorId], references: [id], onDelete: Restrict)
+  doctorId String
+  service  Service           @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  serviceId String
+  startsAt DateTime          @db.Timestamptz()
+  endsAt   DateTime          @db.Timestamptz()
+  status   AppointmentStatus @default(PENDING)
+  source   BookingSource     @default(WEBSITE)
+  /// Non-clinical scheduling note only — never store medical details here.
+  patientNotes       String?
+  cancellationReason String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  // Supports the per-doctor availability query and the exclusion-constraint
+  // maintenance plan.
+  @@index([doctorId, status, startsAt])
+  @@index([status, startsAt])
+  @@index([patientId])
+}
+
+/// Slot-reserving statuses are PENDING and CONFIRMED (see the exclusion
+/// constraint in the initial migration and VALID_TRANSITIONS in
+/// lib/server/appointments.ts).
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+enum BookingSource {
+  WEBSITE
+  WHATSAPP
+  STAFF
+}
+
+/* ------------------------------------------------------------------ *
+ * Staff auth (sessions + audit trail groundwork)
+ * ------------------------------------------------------------------ */
+
+model Staff {
+  id           String           @id @default(cuid())
+  /// Login identifier; accounts are created offline, never via a public API.
+  email        String           @unique
+  fullName     String
+  /// scrypt hash (`scrypt$N,r,p$salt$hash`) — see lib/server/auth.ts.
+  passwordHash String
+  role         StaffRole        @default(STAFF)
+  active       Boolean          @default(true)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  sessions     StaffSession[]
+  auditLogs    AuditLog[]
+}
+
+enum StaffRole {
+  ADMIN
+  STAFF
+}
+
+model StaffSession {
+  /// SHA-256 of the signed cookie value (never the raw token).
+  id        String   @id
+  staff     Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  staffId   String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([staffId])
+}
+
+model AuditLog {
+  id       String  @id @default(cuid())
+  staff    Staff?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  staffId  String?
+  /// e.g. "appointment.confirm", "appointment.cancel", "staff.login".
+  action   String
+  entityType String
+  entityId String?
+  metadata Json?
+  createdAt DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}

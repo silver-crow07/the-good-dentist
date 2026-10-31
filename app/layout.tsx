@@ -5,6 +5,7 @@ import { Footer } from "@/components/layout/Footer";
 import { FloatingWhatsAppButton } from "@/components/layout/FloatingWhatsAppButton";
 import { Navbar } from "@/components/layout/Navbar";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/constants";
+import { buildDentistStructuredData } from "@/lib/structured-data";
 
 import "./globals.css";
 
@@ -32,6 +33,8 @@ export const metadata: Metadata = {
     "dental clinic",
     "dentist",
     "dental care",
+    "Bengaluru dentist",
+    "Kumbalgodu dental clinic",
     "teeth cleaning",
     "root canal",
     "dental implants",
@@ -82,6 +85,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
 
         <Footer />
         <FloatingWhatsAppButton />
+
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(buildDentistStructuredData()),
+          }}
+        />
 
         <noscript>
           <style>{`.reveal { opacity: 1 !important; transform: none !important; }`}</style>

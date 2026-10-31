@@ -11,7 +11,7 @@ import { doctors } from "@/data/doctors";
 export const metadata: Metadata = {
   title: "Our Dentist",
   description:
-    "Meet the dentists at The Good Dentist — qualifications, experience and areas of expertise.",
+    "Meet the dentist at The Good Dentist — Dr. Nidhi Paliwal, BDS, PGDMLS, PGDHM, with 15 years of clinical experience.",
   alternates: { canonical: "/doctors" },
 };
 
@@ -39,9 +39,9 @@ export default function DoctorsPage() {
             <div className="flex items-start gap-3 rounded-2xl border border-accent/30 bg-accent/10 p-4 sm:p-5">
               <Info aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-accent-deep" />
               <p className="text-sm leading-relaxed text-ink/80">
-                <span className="font-semibold">Placeholder profiles.</span> Names,
-                qualifications and portraits below are placeholders — replace them
-                with the clinic&apos;s verified dentist details before launch.
+                <span className="font-semibold">Photo pending.</span> The portrait
+                below is a temporary stock image — the clinic&apos;s own dentist
+                photograph will replace it once supplied.
               </p>
             </div>
           </Reveal>

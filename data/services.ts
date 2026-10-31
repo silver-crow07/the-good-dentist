@@ -16,7 +16,8 @@ export type Service = {
   shortDescription: string;
   overview: string;
   icon: LucideIcon;
-  /** Indicative appointment length in minutes — powers mock slot blocking. */
+  /** PROVISIONAL appointment length in minutes — not yet confirmed by the
+   *  clinic; drives mock slot blocking. Replace with confirmed durations. */
   durationMinutes: number;
   highlights: string[];
   image: string;

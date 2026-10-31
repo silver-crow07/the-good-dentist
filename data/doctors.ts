@@ -3,47 +3,37 @@ export type Doctor = {
   name: string;
   role: string;
   qualifications: string[];
+  /** Confirmed experience summary, e.g. "15 years of clinical experience". */
   experience: string;
+  /** Confirmed areas of practice only — never invent additional entries. */
   expertise: string[];
-  bio: string;
+  /** Short introduction — pending from the client; hidden until supplied. */
+  bio?: string;
+  /** Portrait path. Pending real photo; a labelled stock stand-in is used. */
   image: string;
-  /** True while the profile still uses bracketed placeholder content. */
-  isPlaceholder: boolean;
+  /** True while `image` is a stock stand-in, not a photo of this dentist. */
+  isPhotoPlaceholder: boolean;
 };
 
 /**
- * Placeholder dentist profiles — replace with the clinic's verified
- * qualifications and portraits before launch.
+ * Dentist profiles with client-confirmed details (name, qualifications,
+ * specialization, experience).
  *
- * Portraits are temporary stock photos (CC0) used only to exercise the
- * layout — they are not real clinicians. See `public/images/IMAGE_SOURCES.md`.
+ * Still pending from the client: professional photograph and short
+ * introduction (`bio` is optional and hidden when absent). The current image
+ * is a temporary CC0 stock photo (see `public/images/IMAGE_SOURCES.md`) and
+ * is never presented as an actual photograph of the dentist.
  */
 export const doctors: Doctor[] = [
   {
-    id: "dentist-01",
-    name: "Dr. [Dentist Name]",
+    id: "dr-nidhi-paliwal",
+    name: "Dr. Nidhi Paliwal",
     role: "Dentist",
-    qualifications: ["BDS", "[Additional Qualification]"],
-    experience: "[X]+ years of clinical experience",
-    expertise: [
-      "[Area of expertise]",
-      "[Area of expertise]",
-      "[Area of expertise]",
-    ],
-    bio: "Experienced in providing patient-focused dental care with a gentle approach.",
+    qualifications: ["BDS", "PGDMLS", "PGDHM"],
+    experience: "15 years of clinical experience",
+    expertise: ["Root Canal Treatment"],
     image: "/images/doctors/doctor-portrait-1.jpg",
-    isPlaceholder: true,
-  },
-  {
-    id: "dentist-02",
-    name: "Dr. [Associate Dentist Name]",
-    role: "Dentist",
-    qualifications: ["BDS", "[Additional Qualification]"],
-    experience: "[X]+ years of clinical experience",
-    expertise: ["[Area of expertise]", "[Area of expertise]"],
-    bio: "Experienced in providing patient-focused dental care with a gentle approach.",
-    image: "/images/doctors/doctor-portrait-2.jpg",
-    isPlaceholder: true,
+    isPhotoPlaceholder: true,
   },
 ];
 

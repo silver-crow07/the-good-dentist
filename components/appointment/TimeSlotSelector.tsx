@@ -110,8 +110,11 @@ export function TimeSlotSelector({
       </div>
 
       <p className="mt-4 text-xs text-muted">
-        {availableCount} of {slots.length} slots available for this day. Slots are
-        shown in 30-minute intervals and reserve the full treatment time.
+        {availableCount} of {slots.length} slots available for this day. The
+        clinic is open Mon–Sat 9:00&nbsp;AM–9:00&nbsp;PM; no slots are shown
+        during the 1:00&nbsp;PM–4:00&nbsp;PM lunch break, and Sunday is closed.
+        Times are provisional (30-minute intervals) and held for your request —
+        the clinic team confirms each appointment afterwards.
       </p>
     </div>
   );

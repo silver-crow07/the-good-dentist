@@ -1,4 +1,4 @@
-import { Clock, MapPin, MessageCircle, Navigation, Phone } from "lucide-react";
+import { Clock, Mail, MapPin, MessageCircle, Navigation, Phone } from "lucide-react";
 import Image from "next/image";
 
 import { Reveal } from "@/components/shared/Reveal";
@@ -6,16 +6,14 @@ import { SectionHeading } from "@/components/shared/SectionHeading";
 import { ButtonLink } from "@/components/ui/button";
 import {
   CLINIC_ADDRESS,
-  CLINIC_MAP_QUERY,
+  CLINIC_DIRECTIONS_URL,
+  CLINIC_EMAIL,
+  CLINIC_EMAIL_LINK,
   CLINIC_OPENING_HOURS,
   CLINIC_PHONE_DIAL,
   CLINIC_PHONE_NUMBER,
 } from "@/lib/constants";
 import { buildBookingMessage, buildWhatsAppUrl } from "@/lib/whatsapp";
-
-const directionsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-  CLINIC_MAP_QUERY,
-)}`;
 
 type LocationDetail = {
   id: string;
@@ -47,6 +45,13 @@ const details: LocationDetail[] = [
     value: CLINIC_PHONE_NUMBER,
     href: buildWhatsAppUrl(buildBookingMessage()),
     external: true,
+  },
+  {
+    id: "email",
+    icon: Mail,
+    label: "Email",
+    value: CLINIC_EMAIL,
+    href: CLINIC_EMAIL_LINK,
   },
   {
     id: "hours",
@@ -106,7 +111,7 @@ export function LocationSection() {
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <ButtonLink
-              href={directionsUrl}
+              href={CLINIC_DIRECTIONS_URL}
               target="_blank"
               rel="noopener noreferrer"
               size="lg"
@@ -132,7 +137,7 @@ export function LocationSection() {
             <div className="relative aspect-[4/3] w-full">
               <Image
                 src="/images/map-placeholder.svg"
-                alt="Map placeholder showing the location of The Good Dentist"
+                alt="Illustrative map placeholder for The Good Dentist, Kumbalgodu, Bengaluru"
                 width={800}
                 height={560}
                 sizes="(min-width: 1024px) 46vw, 100vw"
@@ -144,11 +149,11 @@ export function LocationSection() {
               <div>
                 <p className="text-sm font-semibold text-ink">{CLINIC_ADDRESS}</p>
                 <p className="mt-0.5 text-xs text-muted">
-                  Map placeholder — connect the live map embed in a later phase.
+                  Open the location on Google Maps for the live view and directions.
                 </p>
               </div>
               <ButtonLink
-                href={directionsUrl}
+                href={CLINIC_DIRECTIONS_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 variant="outline"

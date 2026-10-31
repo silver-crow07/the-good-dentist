@@ -33,8 +33,8 @@ export default function PrivacyPage() {
               supplied and reviewed.
             </p>
             <p className="mt-4 text-sm leading-relaxed text-muted">
-              Until then, no personal data is stored by this website: appointment
-              and contact forms are frontend-only demonstrations.
+              Until then, no personal data is stored by this website: the
+              appointment form is a frontend-only demonstration.
             </p>
             <p className="mt-6">
               <Link

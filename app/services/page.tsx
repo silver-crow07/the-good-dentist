@@ -19,7 +19,7 @@ export default function ServicesPage() {
       <PageHero
         eyebrow="Our services"
         title="Complete Dental Care, Under One Roof."
-        description="Eight core treatments, one consistent standard of care. Indicative durations are shown for each service so you can plan your visit."
+        description="Eight core treatments, one consistent standard of care. Provisional durations are shown for each service so you can plan your visit."
       />
 
       <section aria-label="All dental services" className="section-pad bg-surface">

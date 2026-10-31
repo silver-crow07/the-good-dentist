@@ -32,6 +32,15 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# prisma (generated client + local database files)
+/generated/prisma
+/prisma/dev.db*
+*.db
+
+# local embedded PostgreSQL (npm run db:up)
+/.pgdata-local/
 
 # vercel
 .vercel

@@ -1,10 +1,12 @@
-import { Clock, MapPin, MessageCircle, Phone } from "lucide-react";
+import { Clock, Mail, MapPin, MessageCircle, Phone } from "lucide-react";
 import Link from "next/link";
 
 import { Logo } from "@/components/layout/Logo";
 import { services } from "@/data/services";
 import {
   CLINIC_ADDRESS,
+  CLINIC_EMAIL,
+  CLINIC_EMAIL_LINK,
   CLINIC_NAME,
   CLINIC_OPENING_HOURS,
   CLINIC_PHONE_DIAL,
@@ -43,6 +45,13 @@ const contactRows = [
     value: CLINIC_PHONE_NUMBER,
     href: whatsappUrl,
     external: true,
+  },
+  {
+    id: "email",
+    icon: Mail,
+    label: "Email",
+    value: CLINIC_EMAIL,
+    href: CLINIC_EMAIL_LINK,
   },
   { id: "address", icon: MapPin, label: "Address", value: CLINIC_ADDRESS },
   {

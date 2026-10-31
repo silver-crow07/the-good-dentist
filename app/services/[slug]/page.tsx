@@ -130,7 +130,7 @@ export default async function ServiceDetailPage(
               </ul>
               <p className="mt-5 flex items-start gap-2 text-sm text-muted">
                 <Clock aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-primary" />
-                Duration shown is indicative — your dentist will confirm the exact
+                Duration shown is provisional — your dentist will confirm the exact
                 time after an assessment.
               </p>
             </Reveal>
@@ -167,7 +167,7 @@ export default async function ServiceDetailPage(
 
               <dl className="mt-6 space-y-3 border-t border-line-soft pt-5 text-sm">
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="text-muted">Indicative duration</dt>
+                  <dt className="text-muted">Provisional duration</dt>
                   <dd className="font-medium text-ink">
                     {service.durationMinutes} minutes
                   </dd>

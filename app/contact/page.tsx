@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Clock, MapPin, MessageCircle, Navigation, Phone } from "lucide-react";
+import { Clock, Mail, MapPin, MessageCircle, Navigation, Phone, User } from "lucide-react";
 import Image from "next/image";
 
 import { CTASection } from "@/components/home/CTASection";
@@ -9,8 +9,11 @@ import { Reveal } from "@/components/shared/Reveal";
 import { ButtonLink } from "@/components/ui/button";
 import {
   CLINIC_ADDRESS,
-  CLINIC_MAP_QUERY,
-  CLINIC_OPENING_HOURS,
+  CLINIC_CONTACT_PERSON,
+  CLINIC_DIRECTIONS_URL,
+  CLINIC_EMAIL,
+  CLINIC_EMAIL_LINK,
+  CLINIC_HOURS_SCHEDULE,
   CLINIC_PHONE_DIAL,
   CLINIC_PHONE_NUMBER,
 } from "@/lib/constants";
@@ -19,16 +22,25 @@ import { buildBookingMessage, buildWhatsAppUrl } from "@/lib/whatsapp";
 export const metadata: Metadata = {
   title: "Contact",
   description:
-    "Contact The Good Dentist — phone, WhatsApp, clinic address and opening hours.",
+    "Contact The Good Dentist — phone, WhatsApp, email, clinic address and opening hours (Mon–Sat, closed Sunday).",
   alternates: { canonical: "/contact" },
 };
 
 const whatsappUrl = buildWhatsAppUrl(buildBookingMessage());
-const directionsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-  CLINIC_MAP_QUERY,
-)}`;
 
-const channels = [
+type ContactChannel = {
+  id: string;
+  icon: typeof Phone;
+  label: string;
+  value: string;
+  href?: string;
+  external?: boolean;
+  action?: string;
+  /** Extra lines (e.g. the lunch break and Sunday rows of the schedule). */
+  lines?: string[];
+};
+
+const channels: ContactChannel[] = [
   {
     id: "phone",
     icon: Phone,
@@ -47,19 +59,34 @@ const channels = [
     external: true,
   },
   {
+    id: "email",
+    icon: Mail,
+    label: "Email",
+    value: CLINIC_EMAIL,
+    href: CLINIC_EMAIL_LINK,
+    action: "Send an email",
+  },
+  {
+    id: "contact-person",
+    icon: User,
+    label: "Contact Person",
+    value: CLINIC_CONTACT_PERSON,
+  },
+  {
     id: "address",
     icon: MapPin,
     label: "Address",
     value: CLINIC_ADDRESS,
     action: "Get directions",
-    href: directionsUrl,
+    href: CLINIC_DIRECTIONS_URL,
     external: true,
   },
   {
     id: "hours",
     icon: Clock,
     label: "Opening Hours",
-    value: CLINIC_OPENING_HOURS,
+    value: CLINIC_HOURS_SCHEDULE[0],
+    lines: [...CLINIC_HOURS_SCHEDULE.slice(1)],
   },
 ];
 
@@ -90,6 +117,14 @@ export default function ContactPage() {
                       <span className="mt-1 block text-sm font-semibold text-ink">
                         {channel.value}
                       </span>
+                      {channel.lines?.map((line) => (
+                        <span
+                          key={line}
+                          className="mt-1 block text-sm text-muted"
+                        >
+                          {line}
+                        </span>
+                      ))}
                     </span>
                     {channel.action ? (
                       <span className="mt-auto text-xs font-medium text-primary">
@@ -101,11 +136,11 @@ export default function ContactPage() {
 
                 return (
                   <div key={channel.id}>
-                    {"href" in channel && channel.href ? (
+                    {channel.href ? (
                       <a
                         href={channel.href}
-                        target={"external" in channel ? "_blank" : undefined}
-                        rel={"external" in channel ? "noopener noreferrer" : undefined}
+                        target={channel.external ? "_blank" : undefined}
+                        rel={channel.external ? "noopener noreferrer" : undefined}
                         className="block h-full"
                       >
                         {body}
@@ -141,7 +176,7 @@ export default function ContactPage() {
               <div className="relative aspect-[4/3] w-full bg-mint">
                 <Image
                   src="/images/map-placeholder.svg"
-                  alt="Map placeholder showing the location of The Good Dentist"
+                  alt="Illustrative map placeholder for The Good Dentist, Kumbalgodu, Bengaluru"
                   width={800}
                   height={560}
                   sizes="(min-width: 1024px) 46vw, 100vw"
@@ -153,11 +188,11 @@ export default function ContactPage() {
                 <div>
                   <p className="text-sm font-semibold text-ink">{CLINIC_ADDRESS}</p>
                   <p className="mt-0.5 text-xs text-muted">
-                    Map placeholder — the live map embed is added in a later phase.
+                    Open the location on Google Maps for the live view and directions.
                   </p>
                 </div>
                 <ButtonLink
-                  href={directionsUrl}
+                  href={CLINIC_DIRECTIONS_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   variant="outline"

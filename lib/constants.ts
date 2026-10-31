@@ -1,9 +1,14 @@
 /**
  * Single source of truth for clinic configuration.
  *
- * Every value below is a Phase 1 placeholder. Replace them with the real clinic
- * details (or read them from environment variables) when the backend phases land —
- * nothing else in the app hardcodes clinic information.
+ * Contact details, address, coordinates, opening hours and the WhatsApp number
+ * below were confirmed by the client and are safe to publish.
+ *
+ * Still pending (do NOT invent): production domain, social profiles, dentist
+ * photograph and introduction, per-treatment appointment durations.
+ *
+ * Nothing else in the app hardcodes clinic information — update it here and
+ * every navbar, footer, page and link updates with it.
  */
 
 export const SITE_NAME = "The Good Dentist";
@@ -19,22 +24,78 @@ export const CLINIC_NAME = "The Good Dentist";
 export const CLINIC_WORDMARK = "the Good Dentist";
 export const CLINIC_TAGLINE = "Rooted in care.";
 
+/* ------------------------------------------------------------------ *
+ * Contact — confirmed by the client
+ * ------------------------------------------------------------------ */
+
+export const CLINIC_CONTACT_PERSON = "Dr. Nidhi Paliwal";
+
 /** Digits only, international format without `+` — used to build wa.me links. */
-export const CLINIC_WHATSAPP_NUMBER = "10000000000";
+export const CLINIC_WHATSAPP_NUMBER = "919180609088";
 
-/** Placeholder phone number used for both display and `tel:` links. */
-export const CLINIC_PHONE_NUMBER = "+1 000 000 0000";
-export const CLINIC_PHONE_DIAL = "tel:+10000000000";
+/** International format for display; `tel:` link uses the same digits. */
+export const CLINIC_PHONE_NUMBER = "+91 9180609088";
+export const CLINIC_PHONE_DIAL = "tel:+919180609088";
 
-export const CLINIC_ADDRESS = "[Clinic Address]";
-export const CLINIC_OPENING_HOURS = "[Clinic Hours]";
+export const CLINIC_EMAIL = "nidhi.paliwal@gmail.com";
+export const CLINIC_EMAIL_LINK = `mailto:${CLINIC_EMAIL}`;
 
-/** Placeholder address used for map/directions links. */
-export const CLINIC_MAP_QUERY = CLINIC_ADDRESS;
+export const CLINIC_ADDRESS =
+  "The Good Dentist, First Floor, Alcove, Malhar Avenue, Kumbalgodu, Bengaluru, Karnataka 560074";
+
+/** Structured address parts (derived from the same confirmed address). */
+export const CLINIC_ADDRESS_PARTS = {
+  street: "First Floor, Alcove, Malhar Avenue, Kumbalgodu, Bengaluru",
+  region: "Karnataka",
+  postalCode: "560074",
+  country: "IN",
+} as const;
+
+/* ------------------------------------------------------------------ *
+ * Opening hours — confirmed by the client
+ * ------------------------------------------------------------------ */
+
+export const CLINIC_WORKING_DAYS = "Monday–Saturday";
+export const CLINIC_MORNING_SESSION = "9:00 AM–1:00 PM";
+export const CLINIC_LUNCH_BREAK = "1:00 PM–4:00 PM";
+export const CLINIC_EVENING_SESSION = "4:00 PM–9:00 PM";
+export const CLINIC_WEEKLY_OFF = "Sunday";
+
+/** Single-line schedule for compact areas (hero, footer, mobile menu). */
+export const CLINIC_OPENING_HOURS = `${CLINIC_WORKING_DAYS}: ${CLINIC_MORNING_SESSION} and ${CLINIC_EVENING_SESSION} · ${CLINIC_WEEKLY_OFF}: Closed`;
+
+/** Line-by-line schedule used on the contact page. */
+export const CLINIC_HOURS_SCHEDULE = [
+  `${CLINIC_WORKING_DAYS}: ${CLINIC_MORNING_SESSION} and ${CLINIC_EVENING_SESSION}`,
+  `Lunch break: ${CLINIC_LUNCH_BREAK}`,
+  `${CLINIC_WEEKLY_OFF}: Closed`,
+] as const;
+
+/* ------------------------------------------------------------------ *
+ * Location — confirmed by the client
+ * ------------------------------------------------------------------ */
+
+export const CLINIC_COORDINATES = {
+  latitude: 12.88949,
+  longitude: 77.466219,
+} as const;
+
+/** `lat,lng` — accepted by the Google Maps search / directions endpoints. */
+export const CLINIC_MAP_QUERY = "12.889490,77.466219";
+
+/** Opens the clinic location on Google Maps (no API key required). */
+export const CLINIC_MAP_URL = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+  CLINIC_MAP_QUERY,
+)}`;
+
+/** Turn-by-turn directions to the clinic on Google Maps. */
+export const CLINIC_DIRECTIONS_URL = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
+  CLINIC_MAP_QUERY,
+)}`;
 
 /**
  * Temporary stock photography (CC0 / free-license). Replace with real clinic
- * photography before launch. Sources & licenses are listed in
+ * photography when the client supplies it. Sources & licenses are listed in
  * `public/images/IMAGE_SOURCES.md`.
  */
 export const CLINIC_IMAGES = {
