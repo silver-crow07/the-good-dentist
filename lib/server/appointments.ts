@@ -30,11 +30,13 @@ import type { ApiErrorCode } from "./api";
 import { getPrisma, type PrismaTx } from "./db";
 import {
   buildDaySlots,
+  candidateStartMinutes,
   clinicDateKey,
   isValidStart,
   parseDateKey,
   weekdayOfDateKey,
   wallClockParts,
+  zonedTimeToUtc,
   type ScheduleConfig,
   type WeekdayHours,
 } from "./schedule";
@@ -123,6 +125,33 @@ export const VALID_TRANSITIONS: Record<PublicAppointment["status"], PublicAppoin
 
 /** Statuses that reserve a slot (mirrors the SQL exclusion constraint). */
 export const SLOT_RESERVING_STATUSES = ["PENDING", "CONFIRMED"] as const;
+
+const TERMINAL_STATUSES = ["CANCELLED", "COMPLETED", "NO_SHOW"] as const;
+
+function isTerminalStatus(status: PublicAppointment["status"]): boolean {
+  return (TERMINAL_STATUSES as readonly string[]).includes(status);
+}
+
+/** Throws HTTP-409 semantics when `next` is not an allowed transition. */
+function assertStatusTransition(
+  current: PublicAppointment["status"],
+  next: PublicAppointment["status"],
+): void {
+  if (next === current) {
+    throw new AppointmentError(
+      "CONFLICT",
+      `The appointment is already ${current.toLowerCase()}.`,
+    );
+  }
+  const allowed = VALID_TRANSITIONS[current];
+  if (!allowed.includes(next)) {
+    throw new AppointmentError(
+      "CONFLICT",
+      `An appointment that is ${current.toLowerCase()} cannot become ${next.toLowerCase()}.`,
+      { status: "Invalid status change." },
+    );
+  }
+}
 
 /* ------------------------------------------------------------------ *
  * Internal helpers
@@ -249,6 +278,24 @@ function validateStartInstant(
     );
   }
 
+  // The requested instant must be EXACTLY one of the slots the availability
+  // API advertises — same grid, same timezone conversion. Without this a
+  // client could book off-grid instants (e.g. 9:07 AM, or 9:00:30) that were
+  // never offered, bypassing the published schedule while still passing the
+  // hours/overlap checks.
+  const onGrid = candidateStartMinutes(schedule, weekday).some(
+    (minutes) =>
+      zonedTimeToUtc(year, month, day, minutes, schedule.timezone).getTime() ===
+      startsAt.getTime(),
+  );
+  if (!onGrid) {
+    throw new AppointmentError(
+      "VALIDATION_ERROR",
+      "That time is not an available slot — please pick one of the listed times.",
+      { startsAt: "Choose one of the available time slots." },
+    );
+  }
+
   if (!isValidStart(schedule, weekday, minutesOfDay, durationMinutes)) {
     // Distinguish the two common causes for clearer messages.
     const endMinutes = minutesOfDay + durationMinutes;
@@ -289,7 +336,7 @@ function validateStartInstant(
   }
 }
 
-/** Public-safe appointment id: `apt_` + 16 hex chars (72+ bits of entropy). */
+/** Public-safe appointment id: `apt_` + 16 hex chars (64 bits of entropy). */
 function newPublicId(): string {
   return `apt_${randomBytes(8).toString("hex")}`;
 }
@@ -566,29 +613,16 @@ export async function updateAppointment(
 
   const currentStatus = existing.status as PublicAppointment["status"];
 
-  // --- Status transition validation --------------------------------
+  // --- Status transition validation (fast-fail; re-checked in-tx) -------
   if (update.status) {
-    if (update.status === currentStatus) {
-      throw new AppointmentError(
-        "CONFLICT",
-        `The appointment is already ${currentStatus.toLowerCase()}.`,
-      );
-    }
-    const allowed = VALID_TRANSITIONS[currentStatus];
-    if (!allowed.includes(update.status)) {
-      throw new AppointmentError(
-        "CONFLICT",
-        `An appointment that is ${currentStatus.toLowerCase()} cannot become ${update.status.toLowerCase()}.`,
-        { status: "Invalid status change." },
-      );
-    }
+    assertStatusTransition(currentStatus, update.status);
   }
 
   // --- Reschedule validation ---------------------------------------
   let newStart: Date | null = null;
   let newEnd: Date | null = null;
   if (update.startsAt) {
-    if (currentStatus === "CANCELLED" || currentStatus === "COMPLETED" || currentStatus === "NO_SHOW") {
+    if (isTerminalStatus(currentStatus)) {
       throw new AppointmentError(
         "CONFLICT",
         "A cancelled or finished appointment cannot be rescheduled — create a new booking instead.",
@@ -605,6 +639,27 @@ export async function updateAppointment(
   try {
     await prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${doctorLockKey(existing.doctorId)}, 0))`;
+
+      // AUTHORITATIVE status read. The checks above ran outside the
+      // transaction and can be stale when two staff updates race: without
+      // this re-read, a CANCEL and a CONFIRM issued concurrently could both
+      // validate against PENDING — resurrecting a cancelled appointment or
+      // applying an illegal terminal transition. Holding the per-doctor
+      // advisory lock serialises us against other updates and bookings, so
+      // the fresh status read is safe to trust.
+      const fresh = await tx.appointment.findUnique({
+        where: { id: existing.id },
+        select: { status: true },
+      });
+      if (!fresh) throw new AppointmentError("NOT_FOUND", "Appointment not found.");
+      const freshStatus = fresh.status as PublicAppointment["status"];
+      if (update.status) assertStatusTransition(freshStatus, update.status);
+      if (newStart && isTerminalStatus(freshStatus)) {
+        throw new AppointmentError(
+          "CONFLICT",
+          "A cancelled or finished appointment cannot be rescheduled — create a new booking instead.",
+        );
+      }
 
       // Reschedule must not overlap other ACTIVE appointments (exclude self).
       if (newStart && newEnd) {
@@ -640,8 +695,8 @@ export async function updateAppointment(
         entityType: "appointment",
         entityId: publicId,
         metadata: {
-          from: currentStatus,
-          to: targetStatus,
+          from: freshStatus,
+          to: update.status ?? freshStatus,
           ...(newStart ? { startsAt: newStart.toISOString() } : {}),
         },
       });

@@ -40,7 +40,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
   try {
     const appointment = await cancelAppointment(id, parsed.data.reason, guard.staff.id);
-    return jsonOk({ appointment, message: "Appointment cancelled." });
+    // Staff view (incl. patient contact) — never cacheable.
+    return jsonOk(
+      { appointment, message: "Appointment cancelled." },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     if (error instanceof AppointmentError) {
       return jsonError(error.code, error.message, error.fields);

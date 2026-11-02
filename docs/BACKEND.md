@@ -144,6 +144,27 @@ Prevented **in depth**, per doctor:
 Conflicts surface as HTTP `409`. Cancellation frees the slot; only `PENDING`
 and `CONFIRMED` reserve a slot.
 
+### Slot-grid enforcement
+
+The availability API advertises slots derived from the clinic's configured
+interval. Booking re-validates the requested instant server-side and rejects
+any start that is **not exactly one of those advertised instants** (off-grid
+times such as 9:07 AM or 9:00:30 are refused with `VALIDATION_ERROR`, before
+the overlap check runs). This closes the bypass where a direct API call could
+book times the published schedule never offered — including partial-overlap
+attacks that relied on misaligned starts. Covered by integration tests
+("rejects off-grid start times", "rejects an aligned booking overlapping a
+longer appointment").
+
+### Status transitions
+
+`VALID_TRANSITIONS` is enforced **twice**: fast-fail before the transaction,
+then authoritatively *inside* it against a fresh status read taken while
+holding the per-doctor advisory lock. Without the in-transaction re-check,
+two concurrent staff updates (e.g. CANCEL + CONFIRM) could both validate
+against a stale status and resurrect a cancelled appointment. Audit-log rows
+record the authoritative `from`/`to` statuses.
+
 ---
 
 ## Timestamp timezone integrity
@@ -189,7 +210,8 @@ passed. Re-verified after the fix over the wire (API slot vs raw
 All endpoints return the safe error envelope
 `{ error: { code, message, fields? } }`. Raw database errors are never
 exposed; unexpected errors are logged server-side and replaced with a generic
-message.
+message. Staff endpoints that return patient contact details (and `/api/auth/me`)
+send `Cache-Control: no-store` so PII is never cached by intermediaries.
 
 ### Public
 
@@ -321,17 +343,23 @@ domain, socials, dentist photo/bio, privacy/terms text, OG image.
 
 | Suite | Command | Needs DB | Covers |
 | --- | --- | --- | --- |
-| Unit (51) | `npm test` | No | Schedule rules (Mon/Sat/Sun, lunch, closing, past, +05:30 timezone), Zod validation (incl. missing-email regression), rate limiter, scrypt/session crypto, UTC connection-string guard |
-| Integration (44) | `npm run test:integration` | Yes | Availability, booking, back-to-back allowed, misaligned overlap rejected, cancel frees slot, **concurrency races (2 and 5 simultaneous → exactly 1 wins)**, transition table, reschedule, patient identity, audit rows, **stored-timestamp integrity (raw PostgreSQL render vs booked instant)**, plus route-level: 201/409/400/403 CSRF/401/429, cookie flags, logout, no-PII-in-public-responses |
+| Unit (59) | `npm test` | No | Schedule rules (Mon/Sat/Sun, lunch, closing, past, +05:30 timezone), Zod validation (incl. missing-email regression), rate limiter, scrypt/session crypto, UTC connection-string guard, **integration-test DB wipe guard** |
+| Integration (45) | `npm run test:integration` | Yes | Availability, booking, back-to-back allowed, **off-grid starts rejected (slot-bypass protection)**, **aligned cross-duration overlap rejected**, cancel frees slot, **concurrency races (2 and 5 simultaneous → exactly 1 wins)**, transition table, reschedule, patient identity, audit rows, **stored-timestamp integrity (raw PostgreSQL render vs booked instant)**, plus route-level: 201/409/400/403 CSRF/401/429, cookie flags, logout, no-PII-in-public-responses |
 
 Integration tests run against a real PostgreSQL (via the embedded dev DB) and
 exercise the full stack: validation → rate limiting → auth/CSRF → domain
 service → Prisma → PostgreSQL (including the exclusion constraint).
 
-> **Disposable database required:** integration tests **wipe** the
-> `Appointment`, `Patient`, `AuditLog`, `Staff` (and `StaffSession`) tables.
-> Point `DATABASE_URL`/`TEST_DATABASE_URL` at a **disposable** database —
-> **never at production**.
+> **Disposable database required — enforced.** Integration tests **wipe** the
+> `Appointment`, `Patient`, `AuditLog`, `Staff` (and `StaffSession`) tables
+> (clinic config, doctors and services are never touched). Before any query
+> runs, `tests/integration/db-guard.ts` **refuses** to start unless the
+> connection is clearly disposable: `NODE_ENV=production` always refuses;
+> unparseable/non-postgres/empty-db URLs refuse; a remote host is allowed only
+> when the database name ends in `_test` (e.g. `the_good_dentist_test`);
+> loopback (`localhost`/`127.0.0.1`/`::1`) is allowed as the documented local
+> test bed. The refusal message names only host + database — never
+> credentials. The predicate itself is unit-tested.
 
 A manual over-the-wire E2E check (21 assertions) was also run against a
 production build (`npm run start`) with the real local DB: availability,
@@ -354,8 +382,9 @@ production build, including a raw-`pg` comparison of the stored instant.
 - **Rate limiter is per-process** (in-memory) — see [Rate limiting](#rate-limiting).
 - **Public self-cancellation is not exposed** (needs OTP verification first);
   cancellation is staff-only for now.
-- **Integration tests wipe the Staff table** — run them only against a
-  disposable database.
+- **Integration tests wipe the Staff table** — only against disposable
+  databases; the wipe guard (`tests/integration/db-guard.ts`) enforces this
+  automatically (see [Testing](#testing)).
 - **`prisma dev`** (Prisma's hosted local proxy) was abandoned as flaky
   (intermittent `ECONNRESET`); the repo uses `embedded-postgres` instead.
 - Not deployed; no production domain, monitoring, backups, or email/SMS

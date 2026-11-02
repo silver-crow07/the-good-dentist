@@ -14,6 +14,11 @@ if (process.env.TEST_DATABASE_URL) {
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 }
 
+// Refuse — loudly, before any query runs — to wipe anything that is not a
+// disposable database (see tests/integration/db-guard.ts).
+import { assertDisposableDatabase } from "./db-guard";
+assertDisposableDatabase(process.env.DATABASE_URL);
+
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 

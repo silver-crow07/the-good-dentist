@@ -15,5 +15,9 @@ export async function GET(request: Request) {
   if (!staff) {
     return jsonError("UNAUTHORIZED", "Not signed in.");
   }
-  return jsonOk({ staff: { fullName: staff.fullName, role: staff.role } });
+  // Session-derived identity — never cacheable by proxies or the browser.
+  return jsonOk(
+    { staff: { fullName: staff.fullName, role: staff.role } },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }

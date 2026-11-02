@@ -17,6 +17,11 @@ if (process.env.TEST_DATABASE_URL) {
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 }
 
+// Refuse — loudly, before any query runs — to wipe anything that is not a
+// disposable database (see tests/integration/db-guard.ts).
+import { assertDisposableDatabase } from "./db-guard";
+assertDisposableDatabase(process.env.DATABASE_URL);
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -197,9 +202,39 @@ describeDb("appointment booking (real PostgreSQL)", () => {
     expect(b.status).toBe("PENDING");
   });
 
-  it("rejects partially overlapping bookings (misaligned start)", async () => {
-    await createBooking(bookingAt(monday, 12 * 60)); // 12:00–12:30
-    await expectError(createBooking(bookingAt(monday, 12 * 60 + 15)), "CONFLICT");
+  it("rejects off-grid start times (slot-bypass protection)", async () => {
+    // 12:15 is inside working hours and clashes with the 12:00–12:30 booking
+    // above, but it is NOT a slot the availability API ever advertises — the
+    // request must be rejected as a validation error, not slipped through the
+    // hours/overlap checks.
+    const inOccupiedTime = await expectError(
+      createBooking(bookingAt(monday, 12 * 60 + 15)),
+      "VALIDATION_ERROR",
+    );
+    expect(inOccupiedTime.message).toMatch(/slot/i);
+
+    // Off-grid time in FREE calendar space is equally unacceptable.
+    const inFreeTime = await expectError(
+      createBooking(bookingAt(monday, 17 * 60 + 7)), // 5:07 PM
+      "VALIDATION_ERROR",
+    );
+    expect(inFreeTime.message).toMatch(/slot/i);
+
+    // Sub-minute precision is rejected the same way (9:00:30 ≠ 9:00 slot).
+    const withSeconds = `${isoAt(monday, 9 * 60).slice(0, -5)}.300000Z`;
+    await expectError(
+      createBooking(bookingAt(monday, 9 * 60, { startsAt: withSeconds })),
+      "VALIDATION_ERROR",
+    );
+  });
+
+  it("rejects an aligned booking overlapping a longer appointment", async () => {
+    // Root canal (60 min) at 10:30 AM is perfectly on-grid, but 10:30–11:30
+    // overlaps the 11:00–11:30 booking from the back-to-back test.
+    await expectError(
+      createBooking(bookingAt(monday, 10 * 60 + 30, { serviceSlug: "root-canal-treatment" })),
+      "CONFLICT",
+    );
   });
 
   it("rejects Sunday bookings", async () => {

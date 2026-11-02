@@ -33,7 +33,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
   try {
     const appointment = await getAppointmentByPublicId(id);
-    return jsonOk({ appointment });
+    // Staff view includes patient contact details — never cacheable.
+    return jsonOk({ appointment }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof AppointmentError) {
       return jsonError(error.code, error.message, error.fields);
@@ -61,7 +62,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       ...parsed.data,
       staffId: guard.staff.id,
     });
-    return jsonOk({ appointment });
+    return jsonOk({ appointment }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof AppointmentError) {
       return jsonError(error.code, error.message, error.fields);
