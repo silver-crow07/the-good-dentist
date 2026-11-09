@@ -78,18 +78,28 @@ async function readError(response: Response): Promise<ApiClientError> {
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const method = init?.method ?? "GET";
   let response: Response;
   try {
     response = await fetch(url, init);
-  } catch {
+  } catch (cause) {
     // Network failure (offline, server down) — never silently "succeed".
+    console.warn(`[api] ${method} ${url}: network error`, cause);
     throw new ApiClientError(
       0,
       "NETWORK",
       "We could not reach the clinic's booking system. Check your connection and try again, or book via WhatsApp.",
     );
   }
-  if (!response.ok) throw await readError(response);
+  if (!response.ok) {
+    // Safe diagnostic: the on-screen message stays generic, but the browser
+    // console records exactly which endpoint failed and with which public
+    // error code — enough to distinguish a 503 (DB not configured) from a
+    // 400 (bad request) or a 429 without exposing any response payloads.
+    const error = await readError(response);
+    console.warn(`[api] ${method} ${url}: HTTP ${response.status} ${error.code}`);
+    throw error;
+  }
   return (await response.json()) as T;
 }
 

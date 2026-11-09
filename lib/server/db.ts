@@ -23,6 +23,11 @@ const globalForPrisma = globalThis as unknown as {
   __prisma?: PrismaClient;
 };
 
+// Emit the missing-DATABASE_URL diagnostic at most once per process so a
+// misconfigured deployment produces exactly one clear log line (e.g. in the
+// Vercel function logs) instead of only generic 503 responses.
+let warnedMissingDatabaseUrl = false;
+
 /**
  * Force `timezone=UTC` on every pooled connection.
  *
@@ -59,7 +64,22 @@ export type PrismaTx = Omit<
 >;
 
 export function getPrisma(): PrismaClient | null {
-  if (!isDatabaseConfigured()) return null;
+  if (!isDatabaseConfigured()) {
+    // Safe diagnostic: a missing DATABASE_URL previously surfaced only as a
+    // generic 503 ("Online booking is temporarily unavailable…") with nothing
+    // in the server logs to explain it. Log the cause once — never any
+    // connection details — so the fix is obvious from the hosting logs.
+    if (process.env.NODE_ENV !== "test" && !warnedMissingDatabaseUrl) {
+      warnedMissingDatabaseUrl = true;
+      console.error(
+        "[db] DATABASE_URL is not set in this environment — booking, availability " +
+          "and admin data endpoints will answer 503 until it is configured " +
+          "(Vercel: Project Settings → Environment Variables → Production scope, " +
+          "then redeploy). Connection details are never logged.",
+      );
+    }
+    return null;
+  }
 
   if (!globalForPrisma.__prisma) {
     const adapter = new PrismaPg({
