@@ -1,9 +1,11 @@
-# The Good Dentist — Backend (Phase 2)
+# The Good Dentist — Backend
 
 Secure appointment booking backend built on Next.js Route Handlers
 (`app/api/`), PostgreSQL, and Prisma. There is **no separate Express server** —
 the API lives inside the existing Next.js app, and the marketing site is
-unchanged.
+unchanged. Later phases added the staff admin panel (Phases A–C) and
+**Phase D: dental records with private Cloudflare R2 X-ray storage** (see
+[Dental records & private X-ray storage](#dental-records--private-x-ray-storage-phase-d)).
 
 > **Status:** implemented and tested locally against a real PostgreSQL
 > database (see [Testing](#testing)). Not yet deployed; several values are
@@ -23,7 +25,11 @@ unchanged.
 - [Rate limiting](#rate-limiting)
 - [WhatsApp booking](#whatsapp-booking)
 - [Provisional values](#provisional-values)
-- [Future: private file storage (X-rays, records)](#future-private-file-storage-x-rays-records)
+- [Dental records & private X-ray storage (Phase D)](#dental-records--private-x-ray-storage-phase-d)
+  - [Upload / download flow](#upload--download-flow)
+  - [Deletion protocol](#deletion-protocol)
+  - [Cleanup runbook](#cleanup-runbook)
+  - [Verified vs assumed R2 behavior](#verified-vs-assumed-r2-behavior)
 - [Testing](#testing)
 - [Known limitations](#known-limitations)
 - [Prisma 7 notes](#prisma-7-notes)
@@ -87,12 +93,22 @@ git-ignored; **never commit real credentials and never overwrite an existing
 | `SESSION_SECRET` | Yes (for staff login) | HMAC key signing session cookies (min 32 chars in production) |
 | `SESSION_COOKIE_NAME` | No | Session cookie name (default `tgd_session`) |
 | `NEXT_PUBLIC_SITE_URL` | No | Canonical site URL for SEO |
+| `R2_ACCOUNT_ID` | Yes (for X-ray uploads) | Cloudflare account id — **server-side only** |
+| `R2_BUCKET` | Yes (for X-ray uploads) | Private R2 bucket name — **server-side only** |
+| `R2_ACCESS_KEY_ID` | Yes (for X-ray uploads) | R2 API token access key (bucket-scoped, Object Read & Write) — **server-side only** |
+| `R2_SECRET_ACCESS_KEY` | Yes (for X-ray uploads) | R2 API token secret — **server-side only**, never serialized to any response |
+| `CRON_SECRET` | Yes (in production) | Bearer secret for `GET /api/cron/dental-storage-cleanup` (min 32 chars in production) |
+| `DENTAL_MAX_FILES_PER_RECORD` | No (default 50) | Per-record dental file cap `[F-5]` (clamped to 1..500) — checked under a record-row lock; hitting it returns `409`, never a silent truncation |
 
 Missing/invalid configuration **degrades safely**: without `DATABASE_URL`,
 marketing pages still render and booking endpoints return `503` with a
 friendly message (the UI never fakes a successful booking). Without a valid
-`SESSION_SECRET`, auth endpoints return `503`. No secret is hardcoded anywhere
-as a fallback.
+`SESSION_SECRET`, auth endpoints return `503`. Without the complete set of
+`R2_*` variables, dental **file** endpoints answer `503` (records themselves
+keep working) and cleanup jobs that would touch storage are reported as
+`skipped: no_storage` — never as success. Without `CRON_SECRET`, the cron
+route always answers `503` (fail-closed, never runs unauthenticated). No
+secret is hardcoded anywhere as a fallback.
 
 ---
 
@@ -119,6 +135,35 @@ Defined in `prisma/schema.prisma`; migration in
   (`WEBSITE`/`WHATSAPP`/`STAFF`), non-clinical `patientNotes`.
 - **Staff / StaffSession / AuditLog** — staff auth and an audit trail
   (staff actions logged **without patient PII**).
+
+Phase D added (migration
+`prisma/migrations/20261103000000_add_dental_records_storage/migration.sql`):
+
+- **DentalRecord** — per-patient record: `treatmentDate` (`@db.Date`),
+  `diagnosis`, `treatmentDetails`, optional `clinicalNotes`,
+  `createdBy` (staff, `SetNull` on account removal), soft-delete
+  `deletedAt`. Indexed on `treatmentDate` and `deletedAt`.
+- **DentalFile** — one row per X-ray: server-generated immutable `r2Key`
+  (`dental/{patientId}/{recordId}/{fileId}.{ext}`, `@unique`), untrusted
+  `originalName` (display only), `contentType`, `byteSize`, `status`
+  (`PENDING` → `AVAILABLE` / `REJECTED`, or `DELETING`), `cleanupAfter`
+  (no physical delete before this instant), `cleanupAttempts`,
+  `uploadedBy`. Cascade-deletes with its record.
+- **R2KeyRegistry** — permanent tombstone per issued key (`@unique` on
+  `r2Key`): a retired key can never be re-issued, and a PK collision on a
+  freshly generated file id triggers the documented retry (`[KK]`).
+- **StorageDeletionReceipt** — one row per deletion *event*
+  (`r2Key` + `eventNo`, never reused; raw partial unique index
+  `onePending … WHERE "completedAt" IS NULL` allows at most one in-flight
+  deletion per key), with `evidence` (HEAD output) and `completedAt`
+  (the txB gate).
+- **StorageScanState** — singleton (`dental_orphan_scan`) holding the
+  reconciler's durable LIST cursor + the cleanup run **lease**
+  (`leaseOwner`, `leaseExpiresAt`).
+- **DentalFileStatus** (enum) — `PENDING`/`AVAILABLE`/`REJECTED`/`DELETING`.
+
+Audit actions added: `dentalrecord.create/update/delete`,
+`dentalfile.upload/download/delete/rejected/orphan_already_absent/orphan_row_backed`.
 
 Times are stored as UTC instants; all schedule rules are evaluated in the
 clinic timezone by `lib/server/schedule.ts`.
@@ -252,6 +297,35 @@ CANCELLED / COMPLETED / NO_SHOW → terminal (immutable)
 | `POST /api/auth/logout` | Ends the session, clears the cookie. Idempotent. |
 | `GET /api/auth/me` | Resolves the current session. `200` minimal staff info, else `401`. |
 
+### Dental records (Phase D — ADMIN only, session cookie required)
+
+Every endpoint below answers `401` without a session and **`403` for
+`STAFF`** — the whole module is ADMIN-only (enforced server-side per
+request, not in the UI). File endpoints additionally answer `503` when R2
+is not configured. All responses carry `Cache-Control: no-store`.
+
+| Method & path | Description |
+| --- | --- |
+| `GET /api/admin/dental-records` | Chronological list, filters `page`, `pageSize` (1–100), `patientId`, `from`/`to` (treatment-date range, inclusive), `q` (search). `400` invalid query. |
+| `POST /api/admin/dental-records` | Create `{ patientId, treatmentDate, diagnosis, treatmentDetails, clinicalNotes? }`. `201 { record }`; `400`; `404` unknown patient; audit `dentalrecord.create`. |
+| `GET /api/admin/dental-records/[id]` | Detail incl. `clinicalNotes`, full file list, author, timestamps, plus `filesTotal` + `truncated` (the list is capped at 200 rows and **never silently cut** — `truncated: true` says so explicitly). `404` unknown/soft-deleted. |
+| `PATCH /api/admin/dental-records/[id]` | Partial update (`treatmentDate`/`diagnosis`/`treatmentDetails`/`clinicalNotes`). `200` with the list shape; audit `dentalrecord.update` records the changed fields only. |
+| `DELETE /api/admin/dental-records/[id]` | Soft delete (`deletedAt`), audit `dentalrecord.delete`; existing files are queued for physical deletion (per-file intent audit `dentalfile.delete {trigger: "record_delete"}`). |
+| `POST /api/admin/dental-records/[id]/files` | **Upload init.** Body `{ originalName, contentType, byteSize }` (JPEG/PNG, ≤ 10 MB, family must agree; the declared size is re-validated in the service layer). `201 { file: { id, status: PENDING, upload: { method: "PUT", url, headers, expiresAt } } }` — a **presigned PUT** (300 s) with `Content-Type` signed in; server-generated key + `R2KeyRegistry` tombstone written first, under a `FOR UPDATE` lock on the record row that race-safely enforces the per-record file cap (`DENTAL_MAX_FILES_PER_RECORD`, default 50). `400` unsupported/mismatched/oversize, `404` unknown/soft-deleted record, `409` key reservation exhausted **or per-record file limit reached**, `429` rate limited (30/min per staff), `503` storage unconfigured (no row is created). |
+| `POST /api/admin/dental-records/files/[fileId]/complete` | **Upload verify.** HEADs the object and checks it is **not oversize** (`oversize:limit=…:actual=…` — the PUT cannot bind size cryptographically, so this is the hard cap), then declared size, then magic bytes (JPEG/PNG). Pass → `AVAILABLE` + `dentalfile.upload` audit; fail → `REJECTED` + `dentalfile.rejected` audit with reason (`object_missing`/`oversize`/`size_mismatch`/`family_mismatch`/`magic_bytes`). Idempotent replay: a completed file re-completes without a second audit; a `REJECTED` file answers `409`. `429` rate limited (60/min per staff). |
+| `GET /api/admin/dental-records/files/[fileId]/url` | **Secure download.** `200 { url, expiresAt }` — short-lived presigned GET (300 s) + `dentalfile.download` audit **per call**. `409` unless `AVAILABLE`, `404` unknown. |
+| `DELETE /api/admin/dental-records/files/[fileId]` | Queue/immediate delete: `200 { deleted: false, queued: true }` while `cleanupAfter` has not elapsed (or another run holds the lease) — row moves to `DELETING` with an intent audit `dentalfile.delete {trigger:"admin"}`; `{ deleted: true }` runs the full physical protocol immediately. |
+| `GET /api/admin/dental-records/cleanup` | **Throttled sweep** (Jobs B→A→C, 10 items / 60 s) — `200 { run }`. |
+| `POST /api/admin/dental-records/cleanup` | **Full run** (Jobs B→A→C→D, 100 items / 240 s, `maxDuration = 300`) — `200 { run }`. |
+| `GET /api/cron/dental-storage-cleanup` | Cron entry point. `Authorization: Bearer CRON_SECRET` — both sides SHA-256 hashed, then compared with `timingSafeEqual` (fixed-length, no length oracle), still fail-closed. `200 { run }` identical to POST; **`401`** wrong/missing bearer; **`503` fail-closed when `CRON_SECRET` is unset** (never runs unauthenticated). `maxDuration = 300`. |
+
+Both cleanup endpoints answer `409 CONFLICT` while another live run holds
+the storage lease, `429` (rate limited: GET + POST share **10/min per
+staff**), and `405` (with `Allow`) for unsupported methods. The upload-init
+(30/min) and upload-complete (60/min) endpoints are rate limited the same
+way — keyed by the authenticated staff id, enforced server-side before any
+DB/storage work, so client-side UI limits are never the control (F-4).
+
 ---
 
 ## Staff authentication
@@ -277,15 +351,22 @@ CANCELLED / COMPLETED / NO_SHOW → terminal (immutable)
 ## Rate limiting
 
 In-memory fixed-window limiter (`lib/server/rate-limit.ts`), keyed per IP
-(and per account for login). No patient data is part of any key.
+(and per account for login; per **authenticated staff id** for the dental
+endpoints, so a shared NAT IP cannot exhaust a clinic's uploads). No
+patient data is part of any key.
 
 | Endpoint | Limit |
 | --- | --- |
 | `POST /api/appointments` | 6/min burst + 30/day per IP |
 | `GET …/availability` | 300/min per IP |
 | `POST /api/auth/login` | 5/min per IP + 15 per 15 min per account |
+| `POST …/dental-records/[id]/files` (upload init) | 30/min per staff |
+| `POST …/dental-records/files/[fileId]/complete` | 60/min per staff |
+| `GET` + `POST …/dental-records/cleanup` (shared bucket) | 10/min per staff |
 
-Returns `429` with a `Retry-After` header. **Limitation:** this store is
+Returns `429` with a `Retry-After` header. The cron route is **not** on
+this limiter — it stays protected by its fail-closed bearer auth alone.
+**Limitation:** this store is
 per Node process — for multi-instance/serverless deployments, swap in a shared
 store (Redis or the database) behind the same `check()` interface; the route
 handlers need no change.
@@ -318,24 +399,230 @@ domain, socials, dentist photo/bio, privacy/terms text, OG image.
 
 ---
 
-## Future: private file storage (X-rays, records)
+## Dental records & private X-ray storage (Phase D)
 
-**No file uploads exist in this phase** (no public upload endpoint, no
-`public/` writes). When dental records/X-rays are added, they must go to
-**private object storage**, not the repo or `public/`:
+Implemented locally and covered by tests; **external R2 setup is still
+pending approval** (see [Verified vs assumed R2 behavior](#verified-vs-assumed-r2-behavior)
+and `docs/MANUAL_DEPLOYMENT_GUIDE.md` §7). The module is **ADMIN-only** —
+`STAFF` gets `403` on every endpoint (server-side, not just hidden in the UI).
 
-- Store objects in private storage (e.g. S3/GCS/R2 with private buckets);
-  serve via short-lived, **signed URLs** after an authorisation check — never
-  public ACLs, never `public/`.
-- Enforce authz per request: a patient sees only their own records; staff see
-  only what their role permits. Authorisation is checked server-side on every
-  read, not just at upload.
-- Validate upload type (allow-listed MIME + magic-byte sniff), size limits,
-  and scan for malware before persistence.
-- Keep an audit trail (who uploaded/accessed which file, when) — the existing
-  `AuditLog` table is the intended home.
-- Treat filenames as untrusted; generate storage keys server-side (no
-  user-supplied paths).
+UI: `/admin/dental-records` (list, filters, create) and
+`/admin/dental-records/[id]` (detail, chronological history, files).
+Services live in `lib/server/admin/dental-{records,files,delete,cleanup}.ts`,
+storage adapters in `lib/server/storage/`, routes under
+`app/api/admin/dental-records/**` + `app/api/cron/dental-storage-cleanup/`.
+The schema additions are listed under [Database schema](#database-schema).
+
+### Upload / download flow
+
+1. **Init** — `POST [id]/files` validates the allow-list (JPEG/PNG only,
+   extension ↔ MIME family must agree, `byteSize` within `1..MAX_FILE_BYTES`
+   (10 MB), no client-supplied key), then in **one transaction** — which
+   starts by taking a `FOR UPDATE` lock on the record row — writes the
+   `R2KeyRegistry` tombstone and the `PENDING` row with a
+   **server-generated key**
+   `dental/{patientId}/{recordId}/{fileId}.{ext}`. Under that lock the
+   server counts the record's files against `DENTAL_MAX_FILES_PER_RECORD`
+   (default 50): at the limit the transaction aborts with **`409 CONFLICT`**
+   (race-safe — two concurrent inits serialize on the lock; never a silent
+   truncation). A file-id/PK collision rolls the transaction back (no
+   half-created row) and retries with a fresh id (`newFileId()`, test hook
+   `[KK]`).
+2. **Client PUT** — the browser uploads **directly to R2** with the presigned
+   PUT (300 s; `Content-Type` is part of the signature, so the declared type
+   cannot drift). The Next.js server never buffers image bytes. **Note:**
+   `Content-Length`/body are NOT signed — the URL cannot enforce a size
+   (see [Upload-size enforcement & prepared lifecycle rule](#upload-size-enforcement--prepared-lifecycle-rule-f3)).
+3. **Complete** — `POST files/[fileId]/complete` HEADs the object: it must
+   not exceed **10 MB** (`oversize:limit=…:actual=…` → `REJECTED`, checked
+   BEFORE the declared-size comparison), declared `byteSize` must match,
+   then the **magic bytes** must match the declared
+   family (JPEG `FF D8 FF`, PNG signature). Pass → `AVAILABLE` +
+   `dentalfile.upload` audit; fail → `REJECTED` +
+   `dentalfile.rejected { reason }` (`object_missing` / `oversize` /
+   `size_mismatch` / `family_mismatch` / `magic_bytes`). Completion is
+   idempotent (replay never duplicates the
+   audit); a `REJECTED` file answers `409` and is swept by Job B.
+4. **View/download** — `GET files/[fileId]/url` requires `AVAILABLE`, mints a
+   **short-lived presigned GET** (300 s) and writes `dentalfile.download`
+   **per call**. No public URL exists at any moment: no public ACLs, no
+   `public/` writes, no listing endpoint — the bucket must deny anonymous
+   access (external setup step).
+5. **Credentials** — `R2_*` variables are read server-side only
+   (`lib/server/env.ts`), never `NEXT_PUBLIC_*`, and never serialized
+   (tests assert no response body contains `secretAccessKey` / `R2_SECRET`).
+   Every file response carries `Cache-Control: no-store`.
+
+### Deletion protocol
+
+Every physical delete — admin delete, record delete, sweep claim, orphan —
+follows the same two-transaction protocol:
+
+1. **Intent (txA)** — lock the scan-state row (`FOR UPDATE`), take a fresh
+   `clock_timestamp()`, `MAX(eventNo) + 1`, insert the `StorageDeletionReceipt`
+   as PENDING (raw partial unique index ⇒ at most one pending receipt per
+   key; `P2002` ⇒ abort **before** any `DeleteObject`). The intent audit
+   (`dentalfile.delete`, `trigger: admin|record_delete|sweep|orphan` — the
+   exact values written by the source: `admin` admin delete,
+   `record_delete` record delete, `sweep` Job B claim, `orphan` Job D
+   reconcile) is written in the **same transaction** as the transition to
+   `DELETING`.
+2. **URL-TTL guard** — nothing is deleted before `cleanupAfter`
+   (= `createdAt` + 300 s URL TTL + 300 s buffer = 600 s), checked against a
+   fresh DB clock; claims never modify `cleanupAfter`.
+3. **Lease** — one run at a time holds the `StorageScanState` lease (900 s);
+   `holdsLease()` is re-checked **immediately before every `DeleteObject`**.
+4. **Execute** — HEAD (evidence) → `DeleteObject` → HEAD (confirm missing).
+5. **Finalise (txB)** — `UPDATE … WHERE id AND "completedAt" IS NULL` must
+   affect exactly 1 row (else rollback) and the completion audit is inserted
+   atomically. A crash before txB leaves a PENDING receipt; the next run with
+   a free lease takes it over (`takeOverStaleIntent`) — `eventNo` is never
+   reused.
+
+**Documented accepted race (`[FENC]`/`[DL]`):** the final
+check→request gap cannot be fenced — a lease acquired after the last
+`holdsLease()` may overlap an in-flight `DeleteObject`. `DeleteObject` is
+idempotent, so the worst case is a redundant delete of an already-absent key;
+it can never delete an object "too early" by itself (the grace + row checks
+happen before).
+
+**Orphans** (objects with no `DentalFile` row) are deleted only by Job D,
+only after a **48 h inclusive grace** measured from `t0` (the DB clock at run
+start), and only on a **fresh HEAD** `Last-Modified` — LIST timestamps are
+an optimization for skipping clearly-young objects, and a missing timestamp
+fails **closed** (never old enough). The row check is **filter-free**: any
+object with a row is never orphan-deleted, whatever its status.
+
+### Cleanup runbook
+
+Jobs run in order **B → A → C → D** sharing one item budget:
+
+| Job | What it does | Audits written |
+| --- | --- | --- |
+| B sweep | Claims due files (`PENDING` past `cleanupAfter`, `REJECTED`, or soft-deleted record) → `DELETING`. Never touches `cleanupAfter`. | `dentalfile.delete {trigger:"sweep"}` per claim (atomic with the claim) |
+| A delete | Physically deletes claimed rows whose `cleanupAfter <= now` (HEAD → DeleteObject → HEAD, receipt + txB). | none (intent came with the claim) |
+| C purge | Purges soft-deleted records with **zero** file rows remaining. | none |
+| D reconcile | LIST `dental/` + orphan handling: 48 h grace, fail-closed timestamps, row-backed protection, durable cursor, ≤ 2000 keys/run. | `dentalfile.delete {trigger:"orphan"}`, `dentalfile.orphan_already_absent`, `dentalfile.orphan_row_backed` |
+
+How to run:
+
+- **Automatic (after an authorized deploy):** Vercel Cron →
+  `GET /api/cron/dental-storage-cleanup` with
+  `Authorization: Bearer CRON_SECRET` (full run, `maxDuration = 300`).
+  Register it through Vercel's officially supported mechanism — a committed
+  `vercel.json` `crons` entry for path `/api/cron/dental-storage-cleanup`
+  with schedule `0 3 * * *`, or `vercel crons add "/api/cron/dental-storage-cleanup" "0 3 * * *"` —
+  then deploy; the Vercel dashboard (Project → *Settings → Cron Jobs*) is
+  used only to verify, inspect, or disable the job. The route hashes both
+  sides of the bearer and compares them in constant time and
+  **fails closed with 503 whenever `CRON_SECRET` is unset**; a wrong secret
+  answers 401. Until the cron is registered, use the manual endpoint.
+- **Manual (ADMIN session):** `GET …/cleanup` = throttled sweep (Jobs B→A→C,
+  10 items / 60 s — safe to poll) or `POST …/cleanup` = full run
+  (Jobs B→A→C→D, 100 items / 240 s soft deadline).
+- **Reading the result:** `stoppedBy: "complete"` (drained), `"budget"` /
+  `"deadline"` (partial — call again). If another live run holds the lease,
+  the endpoints answer **409 CONFLICT**; a run that *loses* its lease
+  mid-flight stops with `stoppedBy: "lease_busy"` instead of continuing.
+  `skipped: "no_storage"` means `R2_*` is not configured — jobs never fake
+  success.
+- **Crash recovery:** pending receipts are taken over by the next run; the
+  durable cursor resumes the orphan scan across runs and resets when a cycle
+  completes.
+- **Cost/scale guardrails:** shared budgets (10/100 items), 2000 keys per
+  run, 48 h grace before any orphan delete, `Cache-Control: no-store`
+  everywhere.
+
+### Upload-size enforcement & prepared lifecycle rule (F-3)
+
+**What the presigned PUT cryptographically enforces:** `Content-Type` only —
+it is part of the SigV4 signature (`SignedHeaders` contains `content-type`),
+so R2 rejects a PUT whose Content-Type differs from the declared one.
+
+**What it does NOT enforce (stated honestly):** `Content-Length` and the
+request body are **not signed** in `storage/r2.ts → presignPut`. R2
+therefore accepts any body size up to its own service limits — a claim that
+"Content-Length validation is a security guarantee" would only be true if
+Content-Length were included in the signature **and** verified against R2
+in a smoke test. We deliberately do NOT add it (or a `Tagging` header):
+passing unverified signed parameters risks signature rejections that break
+uploads, without any security we could currently prove.
+
+Size is enforced **server-side after the PUT** instead:
+
+1. **Init** — the route's zod schema and a second service-level guard both
+   require `byteSize` ∈ `[1, MAX_FILE_BYTES]` (10 MB) before any row or key
+   is reserved.
+2. **Complete** — `HEAD` size > `MAX_FILE_BYTES` → `REJECTED`
+   (`oversize:limit=…:actual=…`) **before** the declared-size comparison, so
+   an oversize object can never become `AVAILABLE`; and since download
+   requires `AVAILABLE`, it is never served.
+3. **Cleanup** — the `REJECTED` row is claimable by Job B, which physically
+   removes the object after its `cleanupAfter` window.
+
+**Residual exposure (cannot be eliminated without real R2):** a
+temporarily-oversize object may exist in the bucket between PUT and
+complete. Reachable only by an authenticated ADMIN, bounded by the 30
+inits/min rate limit; row + object are cleaned by Job B once rejected.
+
+**Prepared bucket lifecycle rule — NOT configured (no Cloudflare access in
+this task).** Recommended backstop for *abandoned* or *rejected* uploads if
+the application cleanup ever stops running for an extended period
+(Cloudflare dashboard → R2 bucket → Settings → Lifecycle rules) once the
+bucket exists:
+
+| Field | Value |
+| --- | --- |
+| Rule name | `dental-abandoned-uploads-backstop` |
+| Action | Delete objects |
+| Filter | Prefix `dental/` **AND** size > 10 485 760 bytes (10 MB) **AND** age > 1 day (last modification) |
+
+Why this shape (and what to avoid):
+
+- **Never age-only on the shared prefix.** An age rule on `dental/` alone
+  would silently delete healthy X-rays of active records — exactly the F-1
+  class of bug, but at the bucket level and outside application control.
+  Row-backed objects' lifecycle belongs to the application (Job B claims
+  only due PENDING/REJECTED uploads or files of soft-deleted records).
+- **The size filter makes it a pure backstop:** every *valid* object is
+  ≤ 10 MB (init + complete enforce this), so a correctly-behaving upload
+  never matches the rule even after age 1 day; only objects that violated
+  the cap (e.g. a PENDING row whose PUT exceeded it and was never completed)
+  are caught.
+- **Tag-based alternative (`state=abandoned`) is a candidate, not a
+  default:** it would be more precise, but requires adding a signed
+  `Tagging` header to the presigned PUT — unverified for R2 and potentially
+  upload-breaking. Revisit during the approved real-R2 smoke test.
+- **Verify the filter syntax** (combined prefix + size + age) against the
+  real Cloudflare dashboard before creating the rule; Cloudflare lifecycle
+  filter capabilities must be confirmed empirically. This section PREPARES
+  the rule only — nothing was configured.
+
+### Verified vs assumed R2 behavior
+
+All automated tests use the **in-memory storage adapter**
+(`lib/server/storage/memory.ts`, injected via `setStorageForTests`) — real
+R2 is **never** touched by tests, and no real credentials exist locally.
+What the tests *verify* is the protocol logic (ordering, grace, receipts,
+audits, idempotency) against the adapter's documented semantics. What
+remains **assumed until an approved real-R2 smoke test**:
+
+| Behavior | Used by | Status |
+| --- | --- | --- |
+| Presigned PUT with `Content-Type` in the signature (300 s) | upload init | **Assumed** — standard AWS SigV4; R2 documents S3-compatible presigned URLs |
+| Presigned GET (300 s) for a private object | download | **Assumed** — same |
+| HEAD returns size + `Last-Modified`; missing object ⇒ `found: false` without throwing | complete verify, Job A/D evidence, orphan grace | **Assumed** (S3-standard; must confirm R2's exact error shape for absent keys) |
+| LIST with prefix + start-after + `maxKeys`, per-key `LastModified` | Job D | **Assumed** — R2 supports S3 ListObjectsV2; the start-after parameter needs confirmation |
+| `DeleteObject` on an already-absent key succeeds (idempotent) | every deletion path | **Assumed** — critical: a non-idempotent error would surface as `failed_confirm`; smoke test must confirm |
+| `forcePathStyle: true`, `region: "auto"` endpoint config | adapter (`storage/r2.ts`) | **Assumed** per Cloudflare docs |
+| Anonymous/public access denied at the bucket | whole design | **Assumed** until the bucket policy is set (external step: private bucket, no public URLs) |
+| Grace/age decisions come from OUR clock (`t0`) + HEAD timestamp | Job D | **Verified logic** (unit + integration); the timestamp's origin is the assumption |
+| Cron bearer auth (503 unset / 401 wrong / 200 right), mode routing, lease 409 | cron + cleanup routes | **Verified** (integration tests) |
+
+The smoke test plan (steps, expected outputs, failure handling) is in
+`docs/MANUAL_DEPLOYMENT_GUIDE.md` §7 — it stays **pending explicit
+approval**; no Cloudflare account, bucket, token, or billing has been
+created.
 
 ---
 
@@ -343,16 +630,21 @@ domain, socials, dentist photo/bio, privacy/terms text, OG image.
 
 | Suite | Command | Needs DB | Covers |
 | --- | --- | --- | --- |
-| Unit (59) | `npm test` | No | Schedule rules (Mon/Sat/Sun, lunch, closing, past, +05:30 timezone), Zod validation (incl. missing-email regression), rate limiter, scrypt/session crypto, UTC connection-string guard, **integration-test DB wipe guard** |
-| Integration (45) | `npm run test:integration` | Yes | Availability, booking, back-to-back allowed, **off-grid starts rejected (slot-bypass protection)**, **aligned cross-duration overlap rejected**, cancel frees slot, **concurrency races (2 and 5 simultaneous → exactly 1 wins)**, transition table, reschedule, patient identity, audit rows, **stored-timestamp integrity (raw PostgreSQL render vs booked instant)**, plus route-level: 201/409/400/403 CSRF/401/429, cookie flags, logout, no-PII-in-public-responses |
+| Unit (149 tests: 16 files) | `npm test` | No | Schedule rules (Mon/Sat/Sun, lunch, closing, past, +05:30 timezone), Zod validation (incl. missing-email regression), rate limiter, scrypt/session crypto, UTC connection-string guard, **integration-test DB wipe guard**, **route-error logging contract `[F-8]` (stack for Errors, no PHI/secrets/cookies/signed URLs, generic 500)**, **doc/source accuracy guards `[F-6]`/`[F-7]` (exact audit trigger tokens, cron-registration docs)**, plus all Phase D pure logic: key/id generation, magic-byte + family matching, TTL/grace math, presign/input schemas, R2 env resolution, cleanup decision helpers |
+| Integration (165 tests: 8 files) | `npm run test:integration` | Yes | Availability, booking, back-to-back allowed, **off-grid starts rejected (slot-bypass protection)**, **aligned cross-duration overlap rejected**, cancel frees slot, **concurrency races (2 and 5 simultaneous → exactly 1 wins)**, transition table, reschedule, patient identity, audit rows, **stored-timestamp integrity (raw PostgreSQL render vs booked instant)**, plus route-level: 201/409/400/403 CSRF/401/429, cookie flags, logout, no-PII-in-public-responses — **and Phase D** (`dental-records.test.ts` 17, `dental-files.test.ts` 22, `dental-cleanup.test.ts` 28): ADMIN-only authz (401/403/405), record CRUD + filters + audits, upload init/complete verification, presigned URL issuance, delete protocol ordering + receipts + lease, Jobs A–D, **sweep claim guard `[F-1]` (healthy AVAILABLE files never claimed)**, **per-item failure isolation `[F-2]` (`failed_error`, no false receipts, lease released)**, **per-record file cap `[F-5]` (409, race-safe concurrent inits, `filesTotal`/`truncated` — no silent truncation)**, **upload size guards `[F-3]` (service byteSize guard, oversize REJECTED at complete before size equality)**, **endpoint rate limits `[F-4]` (429 + Retry-After, auth before limiter, shared cleanup bucket)**, **hashed wrong-length cron bearer rejection `[F-9]`**, cron fail-closed auth, LIST/HEAD race handling, collision retry `[KK]`, no-credentials-leak assertions |
 
 Integration tests run against a real PostgreSQL (via the embedded dev DB) and
 exercise the full stack: validation → rate limiting → auth/CSRF → domain
-service → Prisma → PostgreSQL (including the exclusion constraint).
+service → Prisma → PostgreSQL (including the exclusion constraint). **Every
+storage-touching test injects the in-memory adapter
+(`setStorageForTests(new MemoryStorage())`)** — no test ever performs a
+network request or needs R2 credentials.
 
 > **Disposable database required — enforced.** Integration tests **wipe** the
-> `Appointment`, `Patient`, `AuditLog`, `Staff` (and `StaffSession`) tables
-> (clinic config, doctors and services are never touched). Before any query
+> `Appointment`, `Patient`, `AuditLog`, `Staff` (and `StaffSession`) tables —
+> and the Phase D suites additionally wipe `DentalRecord`, `DentalFile`,
+> `R2KeyRegistry`, `StorageDeletionReceipt`, `StorageScanState` (clinic
+> config, doctors and services are never touched). Before any query
 > runs, `tests/integration/db-guard.ts` **refuses** to start unless the
 > connection is clearly disposable: `NODE_ENV=production` always refuses;
 > unparseable/non-postgres/empty-db URLs refuse; a remote host is allowed only
@@ -380,11 +672,27 @@ production build, including a raw-`pg` comparison of the stored instant.
 ## Known limitations
 
 - **Rate limiter is per-process** (in-memory) — see [Rate limiting](#rate-limiting).
-- **Public self-cancellation is not exposed** (needs OTP verification first);
-  cancellation is staff-only for now.
 - **Integration tests wipe the Staff table** — only against disposable
   databases; the wipe guard (`tests/integration/db-guard.ts`) enforces this
   automatically (see [Testing](#testing)).
+- **Public self-cancellation is not exposed** (needs OTP verification first);
+  cancellation is staff-only for now.
+- **R2 behavior is assumed, not smoke-tested** — all storage tests use the
+  in-memory adapter; the presign/HEAD/LIST/DELETE assumptions for real R2 are
+  listed in [Verified vs assumed R2 behavior](#verified-vs-assumed-r2-behavior)
+  and wait for an approved smoke test (no Cloudflare account/bucket/token
+  exists yet).
+- **No malware scanning** — uploads get type allow-listing + magic-byte
+  validation (JPEG/PNG, ≤ 10 MB), not AV scanning; add a scanner before
+  treating uploads as virus-free.
+- **Cron not yet registered** — until an authorized deploy adds the Vercel
+  cron, cleanup is manual (`GET/POST /api/admin/dental-records/cleanup`);
+  abandoned `PENDING`/`REJECTED` rows and orphans therefore only drain when
+  someone (or the cron) runs a job.
+- **Unfenceable check→request race accepted** — the final lease check and
+  `DeleteObject` cannot be fenced; documented and tested
+  ([Deletion protocol](#deletion-protocol)); worst case is an idempotent
+  re-delete.
 - **`prisma dev`** (Prisma's hosted local proxy) was abandoned as flaky
   (intermittent `ECONNRESET`); the repo uses `embedded-postgres` instead.
 - Not deployed; no production domain, monitoring, backups, or email/SMS

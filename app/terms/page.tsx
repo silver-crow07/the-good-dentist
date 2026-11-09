@@ -32,8 +32,10 @@ export default function TermsPage() {
               has been supplied and reviewed.
             </p>
             <p className="mt-4 text-sm leading-relaxed text-muted">
-              Appointment requests submitted through this website are
-              demonstrations only and do not create a confirmed booking.
+              Appointment requests submitted through this website create a
+              <strong className="font-medium text-ink"> pending request</strong>,
+              not a confirmed booking — it is only confirmed once the clinic
+              team contacts you to agree the date and time.
             </p>
             <p className="mt-6">
               <Link

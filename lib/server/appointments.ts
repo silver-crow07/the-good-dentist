@@ -392,6 +392,9 @@ async function writeAuditLog(
 export async function getAvailability(input: {
   date: string;
   serviceSlug: string;
+  /** Optional — staff reschedule: slots for a specific clinician (public
+   *  booking omits it and gets the configured default dentist). */
+  doctorSlug?: string;
   now?: Date;
 }): Promise<AvailabilityPayload> {
   const prisma = requirePrisma();
@@ -404,7 +407,7 @@ export async function getAvailability(input: {
   }
 
   const service = await resolveActiveService(prisma, input.serviceSlug);
-  const doctor = await resolveActiveDoctor(prisma);
+  const doctor = await resolveActiveDoctor(prisma, input.doctorSlug);
   const schedule = await loadScheduleConfig(prisma);
 
   const parsed = parseDateKey(input.date)!;

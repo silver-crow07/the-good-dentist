@@ -48,9 +48,16 @@ export function jsonError(
   fields?: ApiFieldErrors,
   init?: ResponseInit,
 ): NextResponse<ApiErrorBody> {
+  // Errors are never cacheable: default every error response to
+  // Cache-Control: no-store (callers may still pass their own headers —
+  // e.g. Retry-After — which are preserved; an explicit Cache-Control from
+  // the caller wins). This makes the documented "all responses are
+  // no-store" claim true for 4xx/5xx paths too.
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Cache-Control")) headers.set("Cache-Control", "no-store");
   return NextResponse.json(
     { error: { code, message, ...(fields ? { fields } : {}) } },
-    { status: STATUS_BY_CODE[code], ...init },
+    { status: STATUS_BY_CODE[code], ...init, headers },
   );
 }
 
@@ -58,8 +65,8 @@ export function jsonOk<T>(body: T, init?: ResponseInit): NextResponse<T> {
   return NextResponse.json(body, { status: 200, ...init });
 }
 
-export function jsonCreated<T>(body: T): NextResponse<T> {
-  return NextResponse.json(body, { status: 201 });
+export function jsonCreated<T>(body: T, init?: ResponseInit): NextResponse<T> {
+  return NextResponse.json(body, { status: 201, ...init });
 }
 
 /** 429 with a Retry-After header and a safe message. */
@@ -79,8 +86,17 @@ export function jsonRateLimited(retryAfterMs: number): NextResponse<ApiErrorBody
  * (never patient data).
  */
 export function handleRouteError(error: unknown, context: string): NextResponse<ApiErrorBody> {
-  // Log the stack for operators; nothing here is returned to the client.
-  console.error(`[api] ${context}:`, error instanceof Error ? error.message : error);
+  // Diagnostic logging (server-side ONLY — nothing here reaches the client).
+  // Error instances log message + STACK, as this function documents. We log
+  // `error.stack` deliberately and never the whole error object, so attached
+  // driver/driver-adapter extras (Prisma `meta`, request configs, headers)
+  // can never leak credentials, cookies, PHI or signed URLs into logs.
+  // Non-Error values are coerced to a string for the same reason.
+  if (error instanceof Error) {
+    console.error(`[api] ${context}: ${error.stack ?? error.message}`);
+  } else {
+    console.error(`[api] ${context}: ${String(error)}`);
+  }
   return jsonError(
     "INTERNAL",
     "Something went wrong on our side. Please try again, or book via WhatsApp.",

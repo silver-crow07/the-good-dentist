@@ -18,7 +18,12 @@ export function Reveal({ children, className, delay = 0 }: RevealProps) {
 
   useEffect(() => {
     const node = ref.current;
-    if (!node || typeof IntersectionObserver === "undefined") return;
+    // No node or no IntersectionObserver: show the content immediately so it
+    // can never stay stuck at opacity 0.
+    if (!node || typeof IntersectionObserver === "undefined") {
+      setVisible(true);
+      return;
+    }
 
     const observer = new IntersectionObserver(
       (entries) => {

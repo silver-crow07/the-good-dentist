@@ -93,13 +93,15 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-/** Loads availability for one date + treatment. */
+/** Loads availability for one date + treatment (optionally a specific clinician — staff reschedule). */
 export function fetchAvailability(
   date: string,
   serviceSlug: string,
   signal?: AbortSignal,
+  doctorSlug?: string,
 ): Promise<AvailabilityResult> {
   const params = new URLSearchParams({ date, serviceSlug });
+  if (doctorSlug) params.set("doctorSlug", doctorSlug);
   return requestJson<AvailabilityResult>(`/api/appointments/availability?${params.toString()}`, {
     signal,
     headers: { accept: "application/json" },

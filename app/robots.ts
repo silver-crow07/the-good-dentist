@@ -7,6 +7,8 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: "*",
       allow: "/",
+      // The staff admin panel must never be crawled or indexed.
+      disallow: ["/admin"],
     },
     sitemap: `${SITE_URL}/sitemap.xml`,
   };

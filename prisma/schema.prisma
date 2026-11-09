@@ -87,8 +87,29 @@ model Patient {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   appointments Appointment[]
+  clinicalNotes ClinicalNote[]
+  dentalRecords DentalRecord[]
 
   @@index([phone])
+}
+
+/* ------------------------------------------------------------------ *
+ * Internal clinical notes (Phase C — ADMIN-only, never public)
+ * ------------------------------------------------------------------ */
+
+model ClinicalNote {
+  id        String   @id @default(cuid())
+  patient   Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId String
+  /// Author (null when the staff account was deleted — note is retained).
+  staff     Staff?   @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  staffId   String?
+  /// Internal clinical text. Rendered only inside the guarded admin panel.
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([patientId, createdAt])
 }
 
 /* ------------------------------------------------------------------ *
@@ -196,6 +217,11 @@ model Staff {
   updatedAt    DateTime         @updatedAt
   sessions     StaffSession[]
   auditLogs    AuditLog[]
+  clinicalNotes ClinicalNote[]
+  /// Dental records authored by this staff member (Phase D).
+  dentalRecords DentalRecord[]   @relation("DentalRecordAuthor")
+  /// Dental files uploaded by this staff member (Phase D).
+  dentalFiles   DentalFile[]     @relation("DentalFileUploader")
 }
 
 enum StaffRole {
@@ -227,4 +253,132 @@ model AuditLog {
 
   @@index([entityType, entityId])
   @@index([createdAt])
+}
+
+/* ------------------------------------------------------------------ *
+ * Phase D — dental records + private X-ray file storage (Cloudflare R2)
+ *
+ * Design rules (approved across planning Rounds 1–12):
+ *  - Objects live in a PRIVATE R2 bucket; the browser talks to R2 only via
+ *    short-lived presigned URLs issued after an ADMIN-only server check.
+ *    No public URLs, ever. R2 credentials never leave the server.
+ *  - `DentalFile.r2Key` is IMMUTABLE after creation and every key is
+ *    reserved in `R2KeyRegistry` (a permanent tombstone) inside the SAME
+ *    transaction that creates the file row — a retired key can never be
+ *    re-issued (see lib/server/admin/dental-files.ts).
+ *  - Deletion is two-phase: an intent (status DELETING, or a
+ *    `StorageDeletionReceipt` for orphans) is always durable BEFORE the
+ *    external DeleteObject call, and every physical deletion is followed by
+ *    a HEAD confirmation before the row/audit is finalised.
+ *  - The orphan reconciler (Job D) never deletes a row-backed object: row
+ *    existence is the first predicate, and the 48 h grace is recomputed
+ *    from the CURRENT HeadObject timestamp (LIST timestamps are an
+ *    optimization only — never authorization).
+ * ------------------------------------------------------------------ */
+
+model DentalRecord {
+  id        String   @id @default(cuid())
+  patient   Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId String
+  /// Date the treatment happened (clinic-local calendar date, DATE column).
+  treatmentDate DateTime @db.Date
+  diagnosis       String
+  treatmentDetails String
+  /// Optional free-form clinical notes attached to the record itself.
+  clinicalNotes   String?
+  /// Author (null when the staff account was deleted — record is retained).
+  author  Staff?  @relation("DentalRecordAuthor", fields: [createdBy], references: [id], onDelete: SetNull)
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  /// Soft delete: the record (and its files) are removed by the cleanup
+  /// workers — Job C purges the row only once zero files remain.
+  deletedAt DateTime?
+  files     DentalFile[]
+
+  @@index([patientId, treatmentDate])
+  @@index([treatmentDate])
+  @@index([deletedAt])
+}
+
+enum DentalFileStatus {
+  /// Row reserved + presigned URL issued; object not yet confirmed.
+  PENDING
+  /// Server verified size + magic bytes; safe to view/download.
+  AVAILABLE
+  /// Server verification failed — the object is swept, never served.
+  REJECTED
+  /// Deletion requested (admin/record-delete/sweep); worker finalises.
+  DELETING
+}
+
+model DentalFile {
+  id       String        @id @default(cuid())
+  record   DentalRecord  @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  recordId String
+  /// Server-generated, never user-supplied:
+  /// `dental/{patientId}/{recordId}/{fileId}.{ext}` — IMMUTABLE.
+  r2Key    String        @unique
+  originalName String
+  contentType  String
+  byteSize     Int
+  status   DentalFileStatus @default(PENDING)
+  /// No physical delete may run before this instant (URL TTL 300 s +
+  /// 300 s buffer for in-flight requests = createdAt + 600 s).
+  cleanupAfter DateTime
+  cleanupAttempts Int     @default(0)
+  /// Uploader (null when the staff account was deleted).
+  uploader Staff?      @relation("DentalFileUploader", fields: [uploadedBy], references: [id], onDelete: SetNull)
+  uploadedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([recordId, createdAt])
+  @@index([status, cleanupAfter])
+}
+
+/// Singleton row backing the orphan reconciler's durable cursor + lease.
+model StorageScanState {
+  /// Fixed primary key — exactly one row (`dental_orphan_scan`).
+  id String @id @default("dental_orphan_scan")
+  /// Durable LIST cursor (null = cycle not started / cycle complete).
+  lastScannedKey String?
+  /// Worker id holding the lease (null = free).
+  leaseOwner String?
+  /// Expiry instant; the lease is held iff owner matches AND not expired.
+  leaseExpiresAt DateTime?
+  updatedAt DateTime @updatedAt
+}
+
+/// One deletion EVENT per row: `r2Key` alone is a location, not an identity
+/// (one key can host many events over its lifetime). Event identity = the
+/// cuid PK; natural identity = (r2Key, eventNo). Completed receipts are
+/// NEVER reused — a conflict aborts the intent before any DeleteObject.
+model StorageDeletionReceipt {
+  id        String    @id @default(cuid())
+  r2Key     String
+  /// Per-key event sequence: 1, 2, 3 … (allocated inside the intent tx).
+  eventNo   Int
+  /// Diagnostic evidence captured at intent time (HeadObject snapshot).
+  /// NEVER used to authorize a deletion — authoritative age always comes
+  /// from a fresh HeadObject check against the current clock.
+  evidence  Json?
+  createdAt DateTime  @default(now())
+  /// Set atomically with the audit insert (exact-one-row gate).
+  completedAt DateTime?
+
+  @@unique([r2Key, eventNo])
+  @@index([completedAt])
+  // Raw partial unique index (hand-written in the migration): at most ONE
+  // pending event per key at any time — Prisma PSL cannot express it.
+  //   CREATE UNIQUE INDEX "StorageDeletionReceipt_onePending"
+  //     ON "StorageDeletionReceipt"("r2Key") WHERE "completedAt" IS NULL;
+}
+
+/// Permanent key tombstones: existence = "issued once, never reusable".
+/// Deliberately has NO status field and NO delete path anywhere in the
+/// codebase — retiring a key is implicit (the row outlives its DentalFile).
+model R2KeyRegistry {
+  r2Key      String   @id
+  reservedAt DateTime @default(now())
 }

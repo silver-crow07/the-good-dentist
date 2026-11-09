@@ -4,6 +4,7 @@ import { Inter, Plus_Jakarta_Sans } from "next/font/google";
 import { Footer } from "@/components/layout/Footer";
 import { FloatingWhatsAppButton } from "@/components/layout/FloatingWhatsAppButton";
 import { Navbar } from "@/components/layout/Navbar";
+import { SiteChrome } from "@/components/layout/SiteChrome";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { buildDentistStructuredData } from "@/lib/structured-data";
 
@@ -77,25 +78,35 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           Skip to main content
         </a>
 
-        <Navbar />
+        {/*
+          Site chrome (Navbar / Footer / WhatsApp / structured data) is
+          wrapped in SiteChrome so it disappears on /admin* routes, where the
+          admin shell provides its own navigation. The <main> element stays
+          outside so the skip-link target exists on every route.
+        */}
+        <SiteChrome>
+          <Navbar />
+        </SiteChrome>
 
         <main id="main-content" className="flex-1">
           {children}
         </main>
 
-        <Footer />
-        <FloatingWhatsAppButton />
+        <SiteChrome>
+          <Footer />
+          <FloatingWhatsAppButton />
 
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify(buildDentistStructuredData()),
-          }}
-        />
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{
+              __html: JSON.stringify(buildDentistStructuredData()),
+            }}
+          />
 
-        <noscript>
-          <style>{`.reveal { opacity: 1 !important; transform: none !important; }`}</style>
-        </noscript>
+          <noscript>
+            <style>{`.reveal { opacity: 1 !important; transform: none !important; }`}</style>
+          </noscript>
+        </SiteChrome>
       </body>
     </html>
   );

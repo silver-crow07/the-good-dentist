@@ -1,8 +1,10 @@
 /**
- * GET /api/appointments/availability?date=YYYY-MM-DD&serviceSlug=…
+ * GET /api/appointments/availability?date=YYYY-MM-DD&serviceSlug=…&doctorSlug=…
  *
  * Public. Returns the clinic's slots for one date and treatment, computed
- * server-side from the database schedule. No patient data is involved.
+ * server-side from the database schedule. `doctorSlug` is optional (staff
+ * reschedule targets a specific clinician; public booking uses the default).
+ * No patient data is involved.
  *
  * Responses:
  *   200 { date, timezone, closed, service, doctor, slots: [{ start, label, available }] }
@@ -35,6 +37,7 @@ export async function GET(request: NextRequest) {
     const payload = await getAvailability({
       date: parsed.data.date,
       serviceSlug: parsed.data.serviceSlug,
+      doctorSlug: parsed.data.doctorSlug,
     });
     return jsonOk(payload);
   } catch (error) {

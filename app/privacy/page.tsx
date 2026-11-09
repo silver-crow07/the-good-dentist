@@ -33,8 +33,12 @@ export default function PrivacyPage() {
               supplied and reviewed.
             </p>
             <p className="mt-4 text-sm leading-relaxed text-muted">
-              Until then, no personal data is stored by this website: the
-              appointment form is a frontend-only demonstration.
+              Until the reviewed policy is supplied: appointment requests
+              submitted through this website are stored in the clinic&apos;s
+              booking system so the team can contact you about your visit, and
+              contact details are used only to manage your appointment. This
+              page will be replaced with the clinic&apos;s full privacy policy
+              before launch.
             </p>
             <p className="mt-6">
               <Link

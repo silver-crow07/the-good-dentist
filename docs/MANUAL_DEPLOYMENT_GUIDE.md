@@ -67,7 +67,7 @@ Agent tasks **A3–A5** (health endpoint, shared rate limiting, error reporting)
 | Staff creation | `scripts/create-staff.ts` — offline only, ADMIN role, min 12-char password, re-running rotates the password and revokes sessions | No public registration endpoint exists |
 | Auth | scrypt hashing, HMAC-signed opaque session cookies (HttpOnly/SameSite=Lax/Secure-in-prod), Origin/CSRF checks, login limits 5/min per IP + 15/15min per account | Reviewed and hardened in the security pass |
 | Env validation | `lib/server/env.ts` — no fallback secrets; missing `SESSION_SECRET` → auth returns 503; <32 chars in production → refused | Variables actually used: `DATABASE_URL`, `SESSION_SECRET`, `SESSION_COOKIE_NAME` (optional), `NEXT_PUBLIC_SITE_URL` (optional), `STAFF_EMAIL`/`STAFF_PASSWORD` (offline script only) |
-| Vercel config | **None exists** — no `vercel.json`, no CI workflow, no Dockerfile | Vercel's Next.js auto-detection is sufficient; nothing must change in code |
+| Vercel config | **None exists yet** — no `vercel.json`, no CI workflow, no Dockerfile | Vercel's Next.js auto-detection is sufficient; the only `vercel.json` ever added is the optional cron entry in §7.1 step 8 |
 | Node | Developed on Node 22.21.1; no `engines` field or `.nvmrc` | Optional hardening: task **A2** |
 | Tests | 59 unit + 45 integration (real PostgreSQL) + 21 manual E2E checks; integration suites have a hard **wipe guard** (`tests/integration/db-guard.ts`) | Integration tests refuse non-disposable databases automatically |
 | API runtime | Every route handler pins `runtime = "nodejs"` | Fully compatible with Vercel Functions |
@@ -157,8 +157,9 @@ enter** · **where to get it** · **success confirmation** · **what to tell me*
    | `NEXT_PUBLIC_SITE_URL` | **Production** | `https://<your-final-domain>` — set after M9/M10; you may add it later and redeploy |
 
 4. **Do not set** `STAFF_EMAIL`/`STAFF_PASSWORD` in Vercel — those exist only for the offline staff-creation script (M14).
-5. **Success:** the variables are listed under the correct environment chips.
-6. **Tell me:** "env vars set for Production" (and whether you set Preview or left it unset). Never paste the values.
+5. **Phase D storage vars** (`R2_ACCOUNT_ID`/`R2_BUCKET`/`R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY`, plus `CRON_SECRET`) are added **later** per §7.1 — only after the Cloudflare setup is approved. Until then the dental file endpoints answer a clean 503 in every environment, which is safe.
+6. **Success:** the variables are listed under the correct environment chips.
+7. **Tell me:** "env vars set for Production" (and whether you set Preview or left it unset). Never paste the values.
 
 ### M7 — Approve the paid plans (decision + payment)
 
@@ -419,8 +420,10 @@ ever see connection pressure — I will flag it from the logs.
 
 ## 6. Vercel deployment setup (exact guide)
 
-**No code changes are required.** There is no `vercel.json`, no CI workflow,
-and no Dockerfile — Vercel's Next.js detection is sufficient. The build
+**No code changes are required for the base deployment.** There is no CI
+workflow and no Dockerfile — Vercel's Next.js detection is sufficient (the
+only `vercel.json` this project ever adds is the optional cron entry from
+§7.1 step 8). The build
 pipeline (`prisma generate && next build`) is already deployment-proof, and
 every API route pins `runtime = "nodejs"`.
 
@@ -440,6 +443,8 @@ every API route pins `runtime = "nodejs"`.
 | `DATABASE_URL` | `tgd_prod` **direct** Neon string (+`sslmode=require`) | `tgd_prod_test` string, or **omit** (APIs 503 safely) | local embedded DB string (already in local `.env`) |
 | `SESSION_SECRET` | secret from M4 | secret (same or separate) | any local value (production-length rule does not apply in dev) |
 | `NEXT_PUBLIC_SITE_URL` | `https://<domain>` (after M10) | the `*.vercel.app` preview URL (optional) | `http://localhost:3000` (optional) |
+| `R2_ACCOUNT_ID` / `R2_BUCKET` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | the four §7.1 values (Production bucket) — **not yet created** | preview-bucket values, or **omit** (file APIs 503 safely) | **never** — tests inject the in-memory storage fake; local dev needs no R2 |
+| `CRON_SECRET` | value from §7 (≥ 32 chars) — **not yet created** | omit | omit (local cleanup uses the manual ADMIN endpoint) |
 | `STAFF_EMAIL` / `STAFF_PASSWORD` | **never** | **never** | only when running `staff:create` locally |
 
 **Operating procedures:**
@@ -462,10 +467,99 @@ Verified against `lib/server/env.ts`, `lib/constants.ts`, `scripts/create-staff.
 | `SESSION_SECRET` | **Yes** for staff login (503 without it; must be ≥ 32 chars in production) | HMAC-SHA256 key signing staff session cookies | Generate: `openssl rand -base64 48` or password-manager generator (M4) | Production, Preview (separate values optional) |
 | `NEXT_PUBLIC_SITE_URL` | No (but **yes for correct SEO** before public launch) | Canonical URL for sitemap/robots/Open Graph/structured data | `https://<your-domain>` after M10 | Production; optionally Preview/Development |
 | `SESSION_COOKIE_NAME` | No (default `tgd_session`) | Overrides the session cookie name | — | Leave unset unless a cookie-name conflict arises |
+| `R2_ACCOUNT_ID` | Only for Phase D X-ray storage — **all four `R2_*` must be set together** | Cloudflare account id; without the full set, dental **file** endpoints answer 503 (records keep working) and cleanup reports `skipped: no_storage` | Cloudflare dashboard → R2 → overview (§7.1 — **pending approval**) | Production; Preview only if previews may use storage |
+| `R2_BUCKET` | ″ (same as above) | Private bucket name used for `dental/…` keys | Create per §7.1 (private, no public access) | ″ |
+| `R2_ACCESS_KEY_ID` | ″ (same as above) | R2 API token access key (bucket-scoped, Object Read & Write) | Cloudflare R2 → Manage R2 API Tokens (§7.1) | ″ |
+| `R2_SECRET_ACCESS_KEY` | ″ (same as above) | Token secret — shown once; server-side only, never serialized | Same token screen (store in password manager) | ″ |
+| `CRON_SECRET` | **Yes (Production)** for the daily storage-cleanup cron; route is 503 without it | Bearer secret for `GET /api/cron/dental-storage-cleanup` (SHA-256 on both sides, then constant-time compare) | Generate: `openssl rand -base64 48` (≥ 32 chars) | Production only (local dev uses the manual endpoint) |
+| `DENTAL_MAX_FILES_PER_RECORD` | No (optional — default **50**, supported range **1–500**) | Per-record dental file cap (F-5): maximum number of files ONE dental record may hold; integers outside 1–500 are clamped into range, non-integers fall back to 50 | — | Production, Preview, Development (unset = default 50) |
 | `STAFF_EMAIL`, `STAFF_PASSWORD` | Only for the offline staff script | Feeds `npm run staff:create` | Chosen by the clinic (M14) | **Local machine only — never in Vercel** |
 | `TEST_DATABASE_URL` | Only for running integration tests | Overrides `DATABASE_URL` for the test suites; remote DBs must be named `…_test` (enforced) | Neon `tgd_prod_test` (M3) | Local test runs only |
 
 **Never commit** any value for these — `.env` is git-ignored (verified); keep it that way.
+
+### 7.1 Phase D — private X-ray storage (Cloudflare R2) & cleanup cron
+
+> 🚫 **Nothing in this section has been performed yet.** No Cloudflare
+> account, R2 bucket, API token, billing entry, or Vercel cron exists; no real
+> R2 credentials exist anywhere; local `.env` has **no** `R2_*`/`CRON_SECRET`
+> values and needs none (tests use the in-memory storage fake). Execute only
+> after explicit approval — creating accounts, buckets, tokens, payment
+> methods, and cron schedules is owner-side external activity.
+
+**A. Cloudflare setup (manual, after approval)**
+
+1. Create/confirm the Cloudflare account and enable R2. Enabling R2 may
+   require a payment method on file even within the free tier — treat that as
+   a billing decision (approval required). Set a **budget alert of $1–5**
+   (Cloudflare → R2 → Metrics/Notifications) so usage anomalies surface.
+2. Create **two private buckets** (no public access, no custom domain):
+   one for **Production** (e.g. `the-good-dentist-dental`) and one for
+   **Preview** (e.g. `the-good-dentist-dental-preview`) so preview deploys
+   can never touch production X-rays.
+3. For each bucket create a **bucket-scoped API token** with
+   *Object Read & Write* only (no account-wide token). Record the four
+   values per environment: `R2_ACCOUNT_ID`, `R2_BUCKET`,
+   `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`.
+4. Configure **CORS** on each bucket to allow the site origin(s)
+   (`https://<domain>`, plus the `*.vercel.app` preview URL for the preview
+   bucket) with methods `PUT` (upload) and `GET` (view), allowed header
+   `Content-Type`. CORS is what lets the browser speak directly to R2; the
+   server never proxies bytes.
+5. Confirm bucket policy: **anonymous access denied** (the app only ever
+   uses presigned URLs, 300 s).
+6. Configure the **prepared backstop lifecycle rule** (rule text prepared
+   in `docs/BACKEND.md` → *Upload-size enforcement & prepared lifecycle
+   rule*): name `dental-abandoned-uploads-backstop`, **Delete objects**,
+   filter prefix `dental/` **AND** size > 10 485 760 bytes **AND** age > 1
+   day. This only catches objects that violated the 10 MB cap — **never**
+   use an age-only filter on `dental/` (it would silently delete healthy
+   X-rays of active records). Verify the exact filter syntax in the
+   dashboard first; tag-based selection (`state=abandoned`) stays a
+   candidate pending the smoke test.
+
+**B. Vercel wiring (after A)**
+
+7. Set the four `R2_*` values (Production; Preview with the preview bucket)
+   and `CRON_SECRET` (Production) per §7 — then **redeploy** (env is baked
+   at build).
+8. Register the cron through Vercel's officially supported mechanism — a
+   committed `vercel.json` `crons` entry for path
+   `/api/cron/dental-storage-cleanup` with schedule `0 3 * * *` (shipped
+   with an authorized deploy), or the CLI: `vercel crons add "/api/cron/dental-storage-cleanup" "0 3 * * *"`.
+   The Vercel dashboard (Project → *Settings → Cron Jobs*) is only there
+   to verify, inspect, or disable an existing job — registration does not
+   happen there. Timing, not a restriction: `0 3 * * *` fires during
+   03:00–03:59 UTC, each cron runs at most once per day on the Hobby plan,
+   and every plan allows up to 100 cron jobs per project. Vercel is
+   documented to attach `Authorization: Bearer <CRON_SECRET>` automatically
+   when that env var is set — **verify this in step 11**; if the header is
+   not attached, the route will answer 401 (fail-closed, never an
+   unauthenticated run).
+9. Until the cron exists, cleanup runs manually: ADMIN login →
+   `POST https://<domain>/api/admin/dental-records/cleanup` (full run) or
+   `GET …/cleanup` (throttled sweep). Runbook: `docs/BACKEND.md` →
+   *Cleanup runbook*.
+
+**C. Real-R2 smoke test (separate explicit approval — verified vs assumed)**
+
+10. The assumptions to confirm are listed in `docs/BACKEND.md` →
+    *Verified vs assumed R2 behavior*: presigned PUT with signed
+    `Content-Type` (and the honest fact that `Content-Length` is **not**
+    signed), presigned GET, HEAD size/`Last-Modified` + absent-key
+    shape, LIST start-after, **idempotent `DeleteObject` on an absent key**,
+    `forcePathStyle`/`region: auto`, plus the lifecycle-rule filter syntax
+    from step 6.
+11. Planned walk-through (against the **preview** bucket first): upload a
+    ≤ 10 MB JPEG via the UI → complete shows `AVAILABLE` → view issues a
+    300 s URL that renders → replay complete is idempotent → wrong-type and
+    oversize are rejected → delete queues then removes object + row →
+    `POST /api/admin/dental-records/cleanup` reports the Jobs → invoke the
+    cron URL manually with/without the bearer (expect 200 / 401, and 503
+    with `CRON_SECRET` unset) → check the audit trail rows
+    (`dentalfile.upload/download/delete`) and R2 metrics for unexpected
+    operations. Record each confirmed/failed assumption next to the table
+    in `docs/BACKEND.md`.
 
 ---
 
